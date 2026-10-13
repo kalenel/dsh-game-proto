@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <meta name="theme-color" content="#141322">
-<title>消除原型 · 手感测试</title>
+<title>每日同题 · 残局消除</title>
 <style>
   *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
   html,body{margin:0;padding:0;height:100%;overflow:hidden;
@@ -12,249 +12,351 @@
     font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
     user-select:none;-webkit-user-select:none;touch-action:manipulation}
   #app{position:fixed;inset:0;display:flex;flex-direction:column;
-    padding:calc(env(safe-area-inset-top) + 10px) 12px calc(env(safe-area-inset-bottom) + 10px)}
-  header{display:flex;justify-content:space-between;align-items:center;
-    padding:6px 8px 12px;flex:0 0 auto}
-  .stat{display:flex;flex-direction:column;gap:2px}
-  .stat .k{font-size:11px;letter-spacing:.08em;color:#8E88A8;text-transform:uppercase}
-  .stat .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
-  .stat.right{align-items:flex-end}
-  #board{flex:1 1 auto;display:grid;grid-template-columns:repeat(5,1fr);
-    grid-template-rows:repeat(6,1fr);gap:7px;min-height:0}
-  .cell{border-radius:14px;display:flex;align-items:center;justify-content:center;
-    font-size:clamp(22px,7vw,34px);background:linear-gradient(160deg,#2A2840,#211F33);
-    box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
-    transition:transform .07s ease,background .12s ease;will-change:transform;
-    position:relative;overflow:hidden}
-  .cell.pop{animation:pop .18s ease}
-  @keyframes pop{0%{transform:scale(1)}45%{transform:scale(1.18)}100%{transform:scale(1)}}
-  .cell.sel{background:linear-gradient(160deg,#4A4270,#38325A);
-    box-shadow:0 0 0 3px #FFD479 inset,0 6px 18px rgba(255,212,121,.25)}
-  .cell.hint{box-shadow:0 0 0 3px #6FD8C8 inset}
-  .cell.gone{opacity:0;transform:scale(.5)}
-  .cell:active{transform:scale(.92)}
-  #tray{flex:0 0 auto;padding:12px 4px 4px;text-align:center;min-height:64px}
-  #msg{font-size:14px;color:#FFD479;line-height:1.5;min-height:21px}
+    padding:calc(env(safe-area-inset-top) + 8px) 10px calc(env(safe-area-inset-bottom) + 8px)}
+  header{flex:0 0 auto;padding:2px 4px 10px}
+  .row{display:flex;justify-content:space-between;align-items:flex-end;gap:8px}
+  .title{font-size:15px;font-weight:700;letter-spacing:.02em}
+  .sub{font-size:11px;color:#8E88A8;margin-top:3px}
+  .stats{display:flex;gap:16px;margin-top:10px}
+  .stat{display:flex;flex-direction:column;gap:1px}
+  .stat .k{font-size:10px;letter-spacing:.08em;color:#8E88A8;text-transform:uppercase}
+  .stat .v{font-size:24px;font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1}
+  .stat .v.warn{color:#FF8A8A}
+  #board{flex:1 1 auto;display:grid;grid-template-columns:repeat(7,1fr);
+    grid-template-rows:repeat(8,1fr);gap:5px;min-height:0;padding:2px}
+  .cell{border-radius:10px;display:flex;align-items:center;justify-content:center;
+    font-size:clamp(12px,3.6vw,18px);color:rgba(20,19,34,.55);font-weight:900;
+    transition:transform .09s ease,opacity .14s ease,box-shadow .12s ease;will-change:transform}
+  .cell.empty{background:rgba(255,255,255,.03);color:transparent}
+  .cell.sel{transform:scale(1.07);box-shadow:0 0 0 3px #fff inset,0 0 14px rgba(255,255,255,.4);z-index:2}
+  .cell.dim{opacity:.35}
+  .cell.pop{animation:pop .2s ease forwards}
+  @keyframes pop{0%{transform:scale(1.07)}100%{transform:scale(.2);opacity:0}}
+  #foot{flex:0 0 auto;padding-top:8px}
+  #msg{font-size:13px;line-height:1.5;min-height:20px;color:#FFD479;text-align:center}
   #msg.dim{color:#8E88A8}
-  #actions{display:flex;gap:10px;margin-top:10px}
-  button{flex:1;border:0;border-radius:14px;padding:15px 0;font-size:16px;font-weight:600;
-    font-family:inherit;color:#141322;background:#FFD479;cursor:pointer;
-    transition:transform .08s ease,opacity .15s ease}
-  button.ghost{background:#2A2840;color:#EDEAF5;box-shadow:inset 0 0 0 1px #3A3654}
+  #bar{display:flex;gap:8px;margin-top:8px}
+  button{flex:1;border:0;border-radius:13px;padding:14px 0;font-size:15px;font-weight:700;
+    font-family:inherit;color:#141322;background:#FFD479;cursor:pointer;transition:transform .08s}
+  button.ghost{background:#26243A;color:#EDEAF5;box-shadow:inset 0 0 0 1px #383456}
   button:active{transform:scale(.97)}
-  button:disabled{opacity:.4}
-  #over{position:fixed;inset:0;background:rgba(20,19,34,.94);display:none;
-    flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:32px;text-align:center}
+  button:disabled{opacity:.35}
+  #over{position:fixed;inset:0;background:rgba(20,19,34,.96);display:none;
+    flex-direction:column;align-items:center;justify-content:center;gap:12px;padding:28px;text-align:center}
   #over.show{display:flex}
-  #over h2{margin:0;font-size:26px}
-  #over .big{font-size:54px;font-weight:800;color:#FFD479;font-variant-numeric:tabular-nums}
-  #over p{margin:0;color:#8E88A8;font-size:14px;line-height:1.6}
-  .note{margin-top:6px;font-size:11px;color:#5E5878;line-height:1.5}
+  #over h2{margin:0;font-size:20px;color:#8E88A8;font-weight:600}
+  #over .big{font-size:58px;font-weight:900;color:#FFD479;font-variant-numeric:tabular-nums;line-height:1}
+  #over .cmp{font-size:13px;color:#8E88A8;line-height:1.7}
+  #over .cmp b{color:#6FD8C8}
+  #share{background:#1E1C2E;border-radius:12px;padding:12px 14px;font-size:12px;color:#B9B3D0;
+    line-height:1.6;max-width:320px;text-align:left;box-shadow:inset 0 0 0 1px #302C48}
+  #over button{max-width:240px;width:100%}
+  .note{font-size:10px;color:#565073;text-align:center;margin-top:6px;line-height:1.5}
 </style>
 </head>
 <body>
 <div id="app">
   <header>
-    <div class="stat"><span class="k">分数</span><span class="v" id="score">0</span></div>
-    <div class="stat right"><span class="k">剩余步数</span><span class="v" id="moves">20</span></div>
-  </header>
-  <div id="board"></div>
-  <div id="tray">
-    <div id="msg" class="dim">点相邻两格交换 · 三个连成一线即消</div>
-    <div id="actions">
-      <button class="ghost" id="btnHint">提示</button>
-      <button id="btnRestart">重新开始</button>
+    <div class="row">
+      <div>
+        <div class="title" id="modeTitle">每日同题 · 残局消除</div>
+        <div class="sub" id="modeSub">今天所有人拿到同一副牌</div>
+      </div>
     </div>
-    <div class="note">这是手感测试原型，不是正式游戏 · 没有音效、没有广告</div>
+    <div class="stats">
+      <div class="stat"><span class="k">分数</span><span class="v" id="score">0</span></div>
+      <div class="stat"><span class="k">剩余步数</span><span class="v" id="moves">5</span></div>
+      <div class="stat"><span class="k">最大一组</span><span class="v" id="biggest">–</span></div>
+    </div>
+  </header>
+
+  <div id="board"></div>
+
+  <div id="foot">
+    <div id="msg" class="dim">点一组同色方块选中 · 再点一次消除</div>
+    <div id="bar">
+      <button class="ghost" id="btnMode">换练习模式</button>
+      <button id="btnHint">提示</button>
+    </div>
+    <div class="note">原型 · 用来判断「同题残局」这个方向对不对 · 无音效无广告</div>
   </div>
 </div>
 
 <div id="over">
-  <h2>本局结束</h2>
+  <h2 id="overTitle">本局结束</h2>
   <div class="big" id="finalScore">0</div>
-  <p id="verdict"></p>
-  <button id="btnAgain" style="max-width:240px;width:100%">再来一局</button>
+  <div class="cmp" id="cmp"></div>
+  <div id="share"></div>
+  <button id="btnAgain">再来一局</button>
 </div>
 
 <script>
 (function(){
   'use strict';
-  var ROWS = 6, COLS = 5, MOVES = 20;
-  var TYPES = ['\u{1F34E}','\u{1F34B}','\u{1F347}','\u{1F353}','\u{1F95D}'];
-  var board = [], score = 0, moves = MOVES, sel = null, busy = false, best = 0;
 
+  var COLS = 7, ROWS = 8, NCOLORS = 5, MAX_MOVES = 5;
+  var COLORS = ['#FF6B6B','#FFD479','#6FD8C8','#8B7BF7','#7FD87F'];
+  var GLYPHS = ['\u25CF','\u25C6','\u25B2','\u25A0','\u2605'];
+
+  var grid = [], moves = MAX_MOVES, score = 0, sel = null, busy = false;
+  var mode = 'daily', seedKey = '';
   var $ = function(id){ return document.getElementById(id); };
   var boardEl = $('board');
 
-  try { best = parseInt(localStorage.getItem('proto_best') || '0', 10) || 0; } catch(e){ best = 0; }
-
-  function rnd(){ return TYPES[(Math.random() * TYPES.length) | 0]; }
-
-  function newBoard(){
-    do {
-      board = [];
-      for (var i = 0; i < ROWS * COLS; i++) board.push(rnd());
-    } while (findMatches().length);
+  /* ---------- 确定性随机：同一天 = 同一副牌 ---------- */
+  function mulberry32(a){
+    return function(){
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      var t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  function hashStr(s){
+    var h = 2166136261;
+    for (var i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  function todayKey(){
+    var d = new Date();
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
   }
 
-  function findMatches(){
-    var out = [], r, c, v;
-    for (r = 0; r < ROWS; r++) {
-      for (c = 0; c < COLS - 2; c++) {
-        v = board[r * COLS + c];
-        if (v && v === board[r * COLS + c + 1] && v === board[r * COLS + c + 2]) {
-          out.push([r, c], [r, c + 1], [r, c + 2]);
-        }
-      }
-    }
-    for (c = 0; c < COLS; c++) {
-      for (r = 0; r < ROWS - 2; r++) {
-        v = board[r * COLS + c];
-        if (v && v === board[(r + 1) * COLS + c] && v === board[(r + 2) * COLS + c]) {
-          out.push([r, c], [r + 1, c], [r + 2, c]);
-        }
+  /* ---------- 棋盘与规则（纯逻辑，可单测） ---------- */
+  function neighbors(i){
+    var r = (i / COLS) | 0, c = i % COLS, out = [];
+    if (r > 0) out.push(i - COLS);
+    if (r < ROWS - 1) out.push(i + COLS);
+    if (c > 0) out.push(i - 1);
+    if (c < COLS - 1) out.push(i + 1);
+    return out;
+  }
+  function groupAt(g, start){
+    var color = g[start];
+    if (color < 0) return [];
+    var seen = {}, stack = [start], out = [];
+    seen[start] = 1;
+    while (stack.length){
+      var i = stack.pop(); out.push(i);
+      var nb = neighbors(i);
+      for (var k = 0; k < nb.length; k++){
+        var n = nb[k];
+        if (!seen[n] && g[n] === color){ seen[n] = 1; stack.push(n); }
       }
     }
     return out;
   }
+  function allGroups(g){
+    var seen = {}, out = [];
+    for (var i = 0; i < g.length; i++){
+      if (g[i] < 0 || seen[i]) continue;
+      var grp = groupAt(g, i);
+      for (var k = 0; k < grp.length; k++) seen[grp[k]] = 1;
+      if (grp.length >= 2) out.push(grp);
+    }
+    return out;
+  }
+  function removeAndGravity(g, idxs){
+    for (var i = 0; i < idxs.length; i++) g[idxs[i]] = -1;
+    var c, r;
+    for (c = 0; c < COLS; c++){
+      var col = [];
+      for (r = ROWS - 1; r >= 0; r--){ if (g[r*COLS+c] >= 0) col.push(g[r*COLS+c]); }
+      for (r = ROWS - 1; r >= 0; r--){
+        var k = ROWS - 1 - r;
+        g[r*COLS+c] = k < col.length ? col[k] : -1;
+      }
+    }
+    var cols = [];
+    for (c = 0; c < COLS; c++){
+      var empty = true;
+      for (r = 0; r < ROWS; r++) if (g[r*COLS+c] >= 0){ empty = false; break; }
+      if (!empty){
+        var arr = [];
+        for (r = 0; r < ROWS; r++) arr.push(g[r*COLS+c]);
+        cols.push(arr);
+      }
+    }
+    while (cols.length < COLS) cols.push(new Array(ROWS).fill(-1));
+    for (c = 0; c < COLS; c++) for (r = 0; r < ROWS; r++) g[r*COLS+c] = cols[c][r];
+  }
+  function scoreFor(n){ return n * n; }
 
-  function render(popSet){
+  function makeGrid(seed){
+    var rng = mulberry32(seed), attempt, g, groups, maxLen;
+    for (attempt = 0; attempt < 300; attempt++){
+      g = new Array(ROWS * COLS);
+      for (var i = 0; i < g.length; i++) g[i] = (rng() * NCOLORS) | 0;
+      groups = allGroups(g);
+      maxLen = 0;
+      for (var k = 0; k < groups.length; k++) if (groups[k].length > maxLen) maxLen = groups[k].length;
+      if (maxLen >= 5 && groups.length >= 9) return g;
+    }
+    return g;
+  }
+
+  /* ---------- 参考最优：束搜索（启发式，非精确解） ---------- */
+  function bestPossible(startGrid, movesLeft, beamWidth){
+    var states = [{ g: startGrid.slice(), s: 0 }], m;
+    for (m = 0; m < movesLeft; m++){
+      var next = [];
+      for (var i = 0; i < states.length; i++){
+        var st = states[i];
+        var gs = allGroups(st.g);
+        for (var j = 0; j < gs.length; j++){
+          var g2 = st.g.slice();
+          var n = gs[j].length;
+          removeAndGravity(g2, gs[j]);
+          next.push({ g: g2, s: st.s + scoreFor(n) });
+        }
+      }
+      if (!next.length) break;
+      next.sort(function(a, b){ return b.s - a.s; });
+      states = next.slice(0, beamWidth);
+    }
+    var best = 0;
+    for (var q = 0; q < states.length; q++) if (states[q].s > best) best = states[q].s;
+    return best;
+  }
+
+  /* ---------- 渲染 ---------- */
+  function render(popIdxs){
+    var popSet = {};
+    if (popIdxs) for (var k = 0; k < popIdxs.length; k++) popSet[popIdxs[k]] = 1;
+    var selSet = {};
+    if (sel) for (var j = 0; j < sel.length; j++) selSet[sel[j]] = 1;
+
     var frag = document.createDocumentFragment();
-    for (var i = 0; i < board.length; i++) {
+    for (var i = 0; i < grid.length; i++){
       var d = document.createElement('div');
-      d.className = 'cell';
-      if (sel === i) d.className += ' sel';
-      if (popSet && popSet.indexOf(i) !== -1) d.className += ' pop';
-      d.textContent = board[i] || '';
+      var v = grid[i];
+      d.className = 'cell' + (v < 0 ? ' empty' : '');
+      if (v >= 0){
+        d.style.background = COLORS[v];
+        d.textContent = GLYPHS[v];
+      }
+      if (selSet[i]) d.className += ' sel';
+      else if (sel && v >= 0) d.className += ' dim';
+      if (popSet[i]) d.className += ' pop';
       d.dataset.i = i;
       frag.appendChild(d);
     }
     boardEl.innerHTML = '';
     boardEl.appendChild(frag);
+
     $('score').textContent = score;
-    $('moves').textContent = moves;
+    var mv = $('moves');
+    mv.textContent = moves;
+    mv.className = 'v' + (moves <= 1 ? ' warn' : '');
+
+    var gs = allGroups(grid), mx = 0;
+    for (var q = 0; q < gs.length; q++) if (gs[q].length > mx) mx = gs[q].length;
+    $('biggest').textContent = mx >= 2 ? mx : '\u2013';
   }
 
-  function say(text, dim){
+  function say(t, dim){
     var m = $('msg');
-    m.textContent = text;
+    m.textContent = t;
     m.className = dim ? 'dim' : '';
   }
 
+  /* ---------- 交互 ---------- */
   function tap(i){
     if (busy || moves <= 0) return;
-    if (sel === null) { sel = i; render(); return; }
-    if (sel === i) { sel = null; render(); return; }
+    if (grid[i] < 0) return;
 
-    var r1 = (sel / COLS) | 0, c1 = sel % COLS;
-    var r2 = (i / COLS) | 0, c2 = i % COLS;
-    if (Math.abs(r1 - r2) + Math.abs(c1 - c2) !== 1) { sel = i; render(); return; }
-
-    var a = sel, b = i;
-    var tmp = board[a]; board[a] = board[b]; board[b] = tmp;
-
-    var matches = findMatches();
-    if (!matches.length) {
-      tmp = board[a]; board[a] = board[b]; board[b] = tmp;
-      sel = null;
-      say('这样换消不掉 · 换个方向试试');
-      render();
+    var grp = groupAt(grid, i);
+    if (grp.length < 2){
+      say('单独一块消不掉 · 至少两个同色相连');
+      sel = null; render();
       return;
     }
+    // 第一次点：选中预览；点同一组第二次：确认消除
+    if (sel && sel.length === grp.length && sel.indexOf(i) !== -1){
+      commit(grp);
+    } else {
+      sel = grp;
+      say('这组 ' + grp.length + ' 块 · 可得 ' + scoreFor(grp.length) + ' 分 · 再点一次消除');
+      render();
+    }
+  }
 
+  function commit(grp){
     busy = true;
     sel = null;
-
-    var cells = matches.map(function(p){ return p[0] * COLS + p[1]; });
-    var gained = matches.length * 10;
-    score += gained;
+    var n = grp.length, pts = scoreFor(n);
+    score += pts;
     moves--;
-
-    for (var k = 0; k < cells.length; k++) board[cells[k]] = null;
-    say('消除 ' + matches.length + ' 个  +' + gained);
-    render(cells);
+    say('消除 ' + n + ' 块  +' + pts);
+    removeAndGravity(grid, grp);
+    render(grp);
 
     setTimeout(function(){
-      for (var j = 0; j < board.length; j++) if (!board[j]) board[j] = rnd();
-      // 连锁：新掉落的也可能直接成三
-      var chain = findMatches(), chainCells = [];
-      while (chain.length) {
-        chainCells = chainCells.concat(chain.map(function(p){ return p[0] * COLS + p[1]; }));
-        score += chain.length * 10;
-        for (var q = 0; q < chain.length; q++) board[chain[q][0] * COLS + chain[q][1]] = null;
-        for (var w = 0; w < board.length; w++) if (!board[w]) board[w] = rnd();
-        chain = findMatches();
-      }
-      if (chainCells.length) say('连锁！额外 +' + (chainCells.length * 10));
-      render(chainCells);
       busy = false;
-      if (moves <= 0) gameOver();
-    }, 160);
+      render();
+      if (moves <= 0) return finish('步数用完');
+      if (!allGroups(grid).length) return finish('没有可消的了');
+    }, 200);
   }
 
-  function gameOver(){
-    if (score > best) {
-      best = score;
-      try { localStorage.setItem('proto_best', String(best)); } catch(e){}
-    }
+  function finish(reason){
+    var gs = allGroups(grid);
+    var ref = bestPossible(grid, moves, 40) + score;
+    $('overTitle').textContent = '本局结束 · ' + reason;
     $('finalScore').textContent = score;
-    var v;
-    if (score >= 400) v = '不错，比最高分还高' ;
-    else if (score >= 250) v = '中规中矩';
-    else v = '再来一次会更好';
-    $('verdict').innerHTML = v + '<br>历史最高：' + best +
-      '<br><span style="color:#5E5878">这一局你觉得爽吗？值不值得再来一局？</span>';
+    var diff = ref - score;
+    $('cmp').innerHTML =
+      '参考最优 <b>' + ref + '</b> 分（启发式搜索，非精确解）<br>' +
+      (diff <= 0 ? '你已经达到或超过参考值 🎉' : '距离参考最优还差 <b>' + diff + '</b> 分');
+    var label = mode === 'daily' ? ('每日一题 ' + seedKey.slice(5)) : '练习模式';
+    $('share').textContent = '【' + label + '】5 步拿了 ' + score + ' 分，来比比？';
     $('over').classList.add('show');
-  }
-
-  function restart(){
-    score = 0; moves = MOVES; sel = null; busy = false;
-    newBoard();
-    $('over').classList.remove('show');
-    say('点相邻两格交换 · 三个连成一线即消', true);
-    render();
   }
 
   function hint(){
     if (busy || moves <= 0) return;
-    for (var a = 0; a < board.length; a++) {
-      var r1 = (a / COLS) | 0, c1 = a % COLS;
-      var nbrs = [];
-      if (c1 < COLS - 1) nbrs.push(a + 1);
-      if (r1 < ROWS - 1) nbrs.push(a + COLS);
-      for (var n = 0; n < nbrs.length; n++) {
-        var b = nbrs[n];
-        var t = board[a]; board[a] = board[b]; board[b] = t;
-        var ok = findMatches().length > 0;
-        t = board[a]; board[a] = board[b]; board[b] = t;
-        if (ok) {
-          var nodes = boardEl.children;
-          nodes[a].classList.add('hint');
-          nodes[b].classList.add('hint');
-          say('试试高亮的这两格（正式版这里是激励视频位）');
-          setTimeout(function(){
-            nodes[a].classList.remove('hint');
-            nodes[b].classList.remove('hint');
-          }, 1600);
-          return;
-        }
-      }
+    var gs = allGroups(grid);
+    if (!gs.length){ say('没有可消的了'); return; }
+    var best = gs[0];
+    for (var i = 1; i < gs.length; i++) if (gs[i].length > best.length) best = gs[i];
+    sel = best;
+    say('最大的一组是 ' + best.length + ' 块（正式版这里是激励视频位）');
+    render();
+  }
+
+  function newGame(keepMode){
+    if (!keepMode) mode = (mode === 'daily') ? 'practice' : 'daily';
+    if (mode === 'daily'){
+      seedKey = todayKey();
+      grid = makeGrid(hashStr('daily-' + seedKey));
+      $('modeTitle').textContent = '每日同题 · 残局消除';
+      $('modeSub').textContent = seedKey + ' · 今天所有人拿到同一副牌';
+      $('btnMode').textContent = '换练习模式';
+    } else {
+      seedKey = 'practice-' + Date.now();
+      grid = makeGrid(hashStr(seedKey));
+      $('modeTitle').textContent = '练习模式 · 残局消除';
+      $('modeSub').textContent = '随机牌面 · 练手感';
+      $('btnMode').textContent = '回每日同题';
     }
-    say('暂时没有可直接消除的走法 · 随便换换看');
+    moves = MAX_MOVES; score = 0; sel = null; busy = false;
+    $('over').classList.remove('show');
+    say('点一组同色方块选中 · 再点一次消除', true);
+    render();
   }
 
   boardEl.addEventListener('click', function(e){
     var t = e.target.closest ? e.target.closest('.cell') : null;
-    if (!t || !t.dataset.i) return;
+    if (!t || t.dataset.i === undefined) return;
     tap(parseInt(t.dataset.i, 10));
   });
-
-  $('btnRestart').addEventListener('click', restart);
-  $('btnAgain').addEventListener('click', restart);
   $('btnHint').addEventListener('click', hint);
+  $('btnMode').addEventListener('click', function(){ newGame(false); });
+  $('btnAgain').addEventListener('click', function(){ newGame(true); });
 
-  newBoard();
-  render();
+  newGame(true);
+  mode = 'daily';
+  newGame(true);
 })();
 </script>
 </body>
