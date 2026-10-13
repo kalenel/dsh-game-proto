@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#141322">
+<title>消除原型 · 手感测试</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;
+    background:#141322;color:#EDEAF5;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    user-select:none;-webkit-user-select:none;touch-action:manipulation}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column;
+    padding:calc(env(safe-area-inset-top) + 10px) 12px calc(env(safe-area-inset-bottom) + 10px)}
+  header{display:flex;justify-content:space-between;align-items:center;
+    padding:6px 8px 12px;flex:0 0 auto}
+  .stat{display:flex;flex-direction:column;gap:2px}
+  .stat .k{font-size:11px;letter-spacing:.08em;color:#8E88A8;text-transform:uppercase}
+  .stat .v{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+  .stat.right{align-items:flex-end}
+  #board{flex:1 1 auto;display:grid;grid-template-columns:repeat(5,1fr);
+    grid-template-rows:repeat(6,1fr);gap:7px;min-height:0}
+  .cell{border-radius:14px;display:flex;align-items:center;justify-content:center;
+    font-size:clamp(22px,7vw,34px);background:linear-gradient(160deg,#2A2840,#211F33);
+    box-shadow:inset 0 1px 0 rgba(255,255,255,.06);
+    transition:transform .07s ease,background .12s ease;will-change:transform;
+    position:relative;overflow:hidden}
+  .cell.pop{animation:pop .18s ease}
+  @keyframes pop{0%{transform:scale(1)}45%{transform:scale(1.18)}100%{transform:scale(1)}}
+  .cell.sel{background:linear-gradient(160deg,#4A4270,#38325A);
+    box-shadow:0 0 0 3px #FFD479 inset,0 6px 18px rgba(255,212,121,.25)}
+  .cell.hint{box-shadow:0 0 0 3px #6FD8C8 inset}
+  .cell.gone{opacity:0;transform:scale(.5)}
+  .cell:active{transform:scale(.92)}
+  #tray{flex:0 0 auto;padding:12px 4px 4px;text-align:center;min-height:64px}
+  #msg{font-size:14px;color:#FFD479;line-height:1.5;min-height:21px}
+  #msg.dim{color:#8E88A8}
+  #actions{display:flex;gap:10px;margin-top:10px}
+  button{flex:1;border:0;border-radius:14px;padding:15px 0;font-size:16px;font-weight:600;
+    font-family:inherit;color:#141322;background:#FFD479;cursor:pointer;
+    transition:transform .08s ease,opacity .15s ease}
+  button.ghost{background:#2A2840;color:#EDEAF5;box-shadow:inset 0 0 0 1px #3A3654}
+  button:active{transform:scale(.97)}
+  button:disabled{opacity:.4}
+  #over{position:fixed;inset:0;background:rgba(20,19,34,.94);display:none;
+    flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:32px;text-align:center}
+  #over.show{display:flex}
+  #over h2{margin:0;font-size:26px}
+  #over .big{font-size:54px;font-weight:800;color:#FFD479;font-variant-numeric:tabular-nums}
+  #over p{margin:0;color:#8E88A8;font-size:14px;line-height:1.6}
+  .note{margin-top:6px;font-size:11px;color:#5E5878;line-height:1.5}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="stat"><span class="k">分数</span><span class="v" id="score">0</span></div>
+    <div class="stat right"><span class="k">剩余步数</span><span class="v" id="moves">20</span></div>
+  </header>
+  <div id="board"></div>
+  <div id="tray">
+    <div id="msg" class="dim">点相邻两格交换 · 三个连成一线即消</div>
+    <div id="actions">
+      <button class="ghost" id="btnHint">提示</button>
+      <button id="btnRestart">重新开始</button>
+    </div>
+    <div class="note">这是手感测试原型，不是正式游戏 · 没有音效、没有广告</div>
+  </div>
+</div>
+
+<div id="over">
+  <h2>本局结束</h2>
+  <div class="big" id="finalScore">0</div>
+  <p id="verdict"></p>
+  <button id="btnAgain" style="max-width:240px;width:100%">再来一局</button>
+</div>
+
+<script>
+(function(){
+  'use strict';
+  var ROWS = 6, COLS = 5, MOVES = 20;
+  var TYPES = ['\u{1F34E}','\u{1F34B}','\u{1F347}','\u{1F353}','\u{1F95D}'];
+  var board = [], score = 0, moves = MOVES, sel = null, busy = false, best = 0;
+
+  var $ = function(id){ return document.getElementById(id); };
+  var boardEl = $('board');
+
+  try { best = parseInt(localStorage.getItem('proto_best') || '0', 10) || 0; } catch(e){ best = 0; }
+
+  function rnd(){ return TYPES[(Math.random() * TYPES.length) | 0]; }
+
+  function newBoard(){
+    do {
+      board = [];
+      for (var i = 0; i < ROWS * COLS; i++) board.push(rnd());
+    } while (findMatches().length);
+  }
+
+  function findMatches(){
+    var out = [], r, c, v;
+    for (r = 0; r < ROWS; r++) {
+      for (c = 0; c < COLS - 2; c++) {
+        v = board[r * COLS + c];
+        if (v && v === board[r * COLS + c + 1] && v === board[r * COLS + c + 2]) {
+          out.push([r, c], [r, c + 1], [r, c + 2]);
+        }
+      }
+    }
+    for (c = 0; c < COLS; c++) {
+      for (r = 0; r < ROWS - 2; r++) {
+        v = board[r * COLS + c];
+        if (v && v === board[(r + 1) * COLS + c] && v === board[(r + 2) * COLS + c]) {
+          out.push([r, c], [r + 1, c], [r + 2, c]);
+        }
+      }
+    }
+    return out;
+  }
+
+  function render(popSet){
+    var frag = document.createDocumentFragment();
+    for (var i = 0; i < board.length; i++) {
+      var d = document.createElement('div');
+      d.className = 'cell';
+      if (sel === i) d.className += ' sel';
+      if (popSet && popSet.indexOf(i) !== -1) d.className += ' pop';
+      d.textContent = board[i] || '';
+      d.dataset.i = i;
+      frag.appendChild(d);
+    }
+    boardEl.innerHTML = '';
+    boardEl.appendChild(frag);
+    $('score').textContent = score;
+    $('moves').textContent = moves;
+  }
+
+  function say(text, dim){
+    var m = $('msg');
+    m.textContent = text;
+    m.className = dim ? 'dim' : '';
+  }
+
+  function tap(i){
+    if (busy || moves <= 0) return;
+    if (sel === null) { sel = i; render(); return; }
+    if (sel === i) { sel = null; render(); return; }
+
+    var r1 = (sel / COLS) | 0, c1 = sel % COLS;
+    var r2 = (i / COLS) | 0, c2 = i % COLS;
+    if (Math.abs(r1 - r2) + Math.abs(c1 - c2) !== 1) { sel = i; render(); return; }
+
+    var a = sel, b = i;
+    var tmp = board[a]; board[a] = board[b]; board[b] = tmp;
+
+    var matches = findMatches();
+    if (!matches.length) {
+      tmp = board[a]; board[a] = board[b]; board[b] = tmp;
+      sel = null;
+      say('这样换消不掉 · 换个方向试试');
+      render();
+      return;
+    }
+
+    busy = true;
+    sel = null;
+
+    var cells = matches.map(function(p){ return p[0] * COLS + p[1]; });
+    var gained = matches.length * 10;
+    score += gained;
+    moves--;
+
+    for (var k = 0; k < cells.length; k++) board[cells[k]] = null;
+    say('消除 ' + matches.length + ' 个  +' + gained);
+    render(cells);
+
+    setTimeout(function(){
+      for (var j = 0; j < board.length; j++) if (!board[j]) board[j] = rnd();
+      // 连锁：新掉落的也可能直接成三
+      var chain = findMatches(), chainCells = [];
+      while (chain.length) {
+        chainCells = chainCells.concat(chain.map(function(p){ return p[0] * COLS + p[1]; }));
+        score += chain.length * 10;
+        for (var q = 0; q < chain.length; q++) board[chain[q][0] * COLS + chain[q][1]] = null;
+        for (var w = 0; w < board.length; w++) if (!board[w]) board[w] = rnd();
+        chain = findMatches();
+      }
+      if (chainCells.length) say('连锁！额外 +' + (chainCells.length * 10));
+      render(chainCells);
+      busy = false;
+      if (moves <= 0) gameOver();
+    }, 160);
+  }
+
+  function gameOver(){
+    if (score > best) {
+      best = score;
+      try { localStorage.setItem('proto_best', String(best)); } catch(e){}
+    }
+    $('finalScore').textContent = score;
+    var v;
+    if (score >= 400) v = '不错，比最高分还高' ;
+    else if (score >= 250) v = '中规中矩';
+    else v = '再来一次会更好';
+    $('verdict').innerHTML = v + '<br>历史最高：' + best +
+      '<br><span style="color:#5E5878">这一局你觉得爽吗？值不值得再来一局？</span>';
+    $('over').classList.add('show');
+  }
+
+  function restart(){
+    score = 0; moves = MOVES; sel = null; busy = false;
+    newBoard();
+    $('over').classList.remove('show');
+    say('点相邻两格交换 · 三个连成一线即消', true);
+    render();
+  }
+
+  function hint(){
+    if (busy || moves <= 0) return;
+    for (var a = 0; a < board.length; a++) {
+      var r1 = (a / COLS) | 0, c1 = a % COLS;
+      var nbrs = [];
+      if (c1 < COLS - 1) nbrs.push(a + 1);
+      if (r1 < ROWS - 1) nbrs.push(a + COLS);
+      for (var n = 0; n < nbrs.length; n++) {
+        var b = nbrs[n];
+        var t = board[a]; board[a] = board[b]; board[b] = t;
+        var ok = findMatches().length > 0;
+        t = board[a]; board[a] = board[b]; board[b] = t;
+        if (ok) {
+          var nodes = boardEl.children;
+          nodes[a].classList.add('hint');
+          nodes[b].classList.add('hint');
+          say('试试高亮的这两格（正式版这里是激励视频位）');
+          setTimeout(function(){
+            nodes[a].classList.remove('hint');
+            nodes[b].classList.remove('hint');
+          }, 1600);
+          return;
+        }
+      }
+    }
+    say('暂时没有可直接消除的走法 · 随便换换看');
+  }
+
+  boardEl.addEventListener('click', function(e){
+    var t = e.target.closest ? e.target.closest('.cell') : null;
+    if (!t || !t.dataset.i) return;
+    tap(parseInt(t.dataset.i, 10));
+  });
+
+  $('btnRestart').addEventListener('click', restart);
+  $('btnAgain').addEventListener('click', restart);
+  $('btnHint').addEventListener('click', hint);
+
+  newBoard();
+  render();
+})();
+</script>
+</body>
+</html>
