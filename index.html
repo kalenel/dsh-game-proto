@@ -16,6 +16,20 @@
   @keyframes shake{
     10%,90%{transform:translate3d(-2px,1px,0)}20%,80%{transform:translate3d(4px,-2px,0)}
     30%,50%,70%{transform:translate3d(-6px,2px,0)}40%,60%{transform:translate3d(6px,-1px,0)}}
+  /* 反馈分级：震动幅度分 4 档。
+     用**不同的 keyframes 名 + 不同时长**，而不是同一套 keyframes 改 scale：
+     getComputedStyle(#app).animationName / animationDuration 与真实位移都能据此读到，
+     「分级生效」才是可测量的（同一套 keyframes 只改 duration 时，幅度差别不可验证）。 */
+  body.shake.s1 #app{animation-name:shake1;animation-duration:.22s}
+  body.shake.s2 #app{animation-name:shake2;animation-duration:.28s}
+  body.shake.s3 #app{animation-name:shake3;animation-duration:.34s}
+  body.shake.s4 #app{animation-name:shake4;animation-duration:.44s}
+  @keyframes shake1{20%,80%{transform:translate3d(-3px,1px,0)}40%,60%{transform:translate3d(3px,-1px,0)}}
+  @keyframes shake2{20%,80%{transform:translate3d(-6px,2px,0)}40%,60%{transform:translate3d(6px,-2px,0)}}
+  @keyframes shake3{10%,90%{transform:translate3d(-8px,3px,0)}
+    30%,50%,70%{transform:translate3d(-14px,5px,0)}40%,60%{transform:translate3d(14px,-4px,0)}}
+  @keyframes shake4{10%,90%{transform:translate3d(-13px,5px,0)}
+    30%,50%,70%{transform:translate3d(-24px,9px,0)}40%,60%{transform:translate3d(24px,-8px,0)}}
   header{flex:0 0 auto;padding:1px 4px 4px}
   .top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
   .lv{font-size:12px;font-weight:900;color:#FFD479}
@@ -44,7 +58,7 @@
   #comboWrap.hot #comboBar{box-shadow:0 0 14px rgba(255,212,121,.8)}
   #wrap{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;justify-content:center}
   #colHead{flex:0 0 auto;display:grid;grid-template-columns:repeat(6,1fr);gap:4px;padding:0 5px 4px;max-width:430px;
-    width:100%;margin:0 auto}
+    width:100%;margin:0 auto;touch-action:none}
   .ch{height:19px;border-radius:6px;display:flex;align-items:center;justify-content:center;
     font-size:11px;font-weight:900}
   .ch.bonus{background:linear-gradient(180deg,#FFD479,#E0A83C);color:#3A2A00}
@@ -56,7 +70,17 @@
      flex 由视口推导，不写死像素高度。 */
   #board{flex:1 1 auto;min-height:0;width:100%;max-width:430px;display:grid;grid-template-columns:repeat(6,1fr);
     grid-template-rows:repeat(8,1fr);gap:4px;padding:5px;border-radius:14px;background:#191728;
-    box-shadow:inset 0 0 0 1px #262340;position:relative;overflow:hidden;margin:0 auto}
+    box-shadow:inset 0 0 0 1px #262340;position:relative;overflow:hidden;margin:0 auto;
+    /* 落子预览必须能"跟着手指走" —— 而 body 上的 touch-action:manipulation 管不到这里：
+       touch-action **不继承**，实测 #board 的 computed 值是 auto，于是浏览器把横向拖拽
+       当成滚动手势接管，立刻派发 pointercancel(0,0) → onUp/pointercancel 里的 showHint(-1)
+       把预览抹掉。真实事件序列（修复前）：
+         pointerdown@42,167 → pointermove@287,167 → pointercancel@0,0 → pointerleave@0,0
+       后果是"按住能看到落点、一拖就消失"，正是本轮要修的"看不见落点"。
+       这里显式声明 none：棋盘区域不需要浏览器的手势接管，拖拽全程由 pointer 事件自己处理。
+       （touch-action:none 只关掉浏览器手势，不阻止 pointerdown/up —— 点击落子不受影响，
+         既有 [4] 点击生效断言仍绿。） */
+    touch-action:none}
   .cell{border-radius:9px;background:rgba(255,255,255,.035);position:relative}
   .cell.bcol{background:rgba(255,212,121,.10);box-shadow:inset 0 0 0 1.5px rgba(255,212,121,.35)}
   .cell.rcol{background:rgba(111,216,200,.10);box-shadow:inset 0 0 0 1.5px rgba(111,216,200,.32)}
@@ -87,9 +111,36 @@
     background:linear-gradient(90deg,transparent,#FF6B6B,transparent);opacity:0;transition:opacity .3s;
     pointer-events:none;z-index:5}
   #danger.on{opacity:.85}
-  #colHint{position:absolute;top:5px;bottom:5px;border-radius:10px;background:rgba(255,255,255,.10);
-    box-shadow:inset 0 0 0 2px rgba(255,255,255,.45);opacity:0;transition:opacity .12s;
-    pointer-events:none;z-index:4}
+  /* 危险心跳：红晕呼吸（#vignette）+ 线脉冲（#danger.pulse）+ 线上段变厚。
+     强度全部由 JS 按最高列高度写成内联 style / data-level，
+     所以「越高越强」是可测的（data-level 与 animation-duration 两路证据）。 */
+  #vignette{position:fixed;inset:0;pointer-events:none;z-index:1;opacity:0;
+    --deep:.30;
+    background:radial-gradient(ellipse at 50% 50%, rgba(255,60,60,0) 38%, rgba(255,54,54,var(--deep)) 78%, rgba(255,30,30,.62) 100%)}
+  #vignette.beat{animation:vig .9s ease-in-out infinite}
+  @keyframes vig{0%,100%{opacity:0}18%{opacity:1}36%{opacity:.42}54%{opacity:.92}}
+  #danger.beat{animation:dpulse 1s ease-in-out infinite}
+  @keyframes dpulse{0%,100%{opacity:.45;transform:scaleY(1)}20%{opacity:1;transform:scaleY(2.4)}60%{opacity:.6;transform:scaleY(1.3)}}
+  /* 全屏闪光（绝境逢生专属）：比任何普通合成的表现都高一档 */
+  #clutchFx{position:fixed;inset:0;pointer-events:none;z-index:85;opacity:0;
+    background:radial-gradient(circle at 50% 45%, rgba(255,255,255,.96), rgba(255,212,121,.55) 42%, rgba(255,120,120,0) 76%)}
+  #clutchFx.show{animation:clutchFlash .78s cubic-bezier(.1,.8,.3,1)}
+  @keyframes clutchFlash{0%{opacity:0}8%{opacity:1}55%{opacity:.55}100%{opacity:0}}
+  #clutchTxt{position:fixed;left:0;right:0;top:38%;text-align:center;pointer-events:none;z-index:86;
+    font-size:40px;font-weight:900;opacity:0;letter-spacing:.04em;color:#FFD479;
+    text-shadow:0 2px 14px rgba(0,0,0,.75),0 0 26px rgba(255,212,121,.9)}
+  #clutchTxt.show{animation:clutchIn 1.15s cubic-bezier(.2,.9,.3,1)}
+  @keyframes clutchIn{0%{opacity:0;transform:scale(.4)}14%{opacity:1;transform:scale(1.22)}
+    30%{transform:scale(1)}78%{opacity:1}100%{opacity:0;transform:scale(1.06) translateY(-18px)}}
+  /* 落子预览的样式见上方 #colHint（对齐到落点格）。 */
+  /* 落子预览：不再是"整列高亮"，而是**对齐到该列的落点格**。
+     几何由 showHint() 写成内联 left/top/width/height（指向具体第几格），
+     所以必须去掉 bottom:5px —— 否则 height 会被拉伸成整列，又变回"看不见落点"。 */
+  #colHint{position:absolute;border-radius:10px;background:rgba(255,255,255,.14);
+    box-shadow:inset 0 0 0 2px rgba(255,255,255,.6),0 0 18px rgba(255,255,255,.22);
+    opacity:0;transition:opacity .12s;pointer-events:none;z-index:4;
+    display:flex;align-items:center;justify-content:center;
+    font-size:19px;font-weight:900;color:#fff;text-shadow:0 1px 5px rgba(0,0,0,.8)}
   .p{position:fixed;width:8px;height:8px;border-radius:50%;pointer-events:none;z-index:60;will-change:transform,opacity}
   .fly{position:fixed;font-weight:900;pointer-events:none;z-index:70;font-variant-numeric:tabular-nums;
     will-change:transform,opacity;text-shadow:0 2px 10px rgba(0,0,0,.6)}
@@ -162,6 +213,32 @@
     justify-content:center;margin-bottom:6px}
   .cname{font-size:12px;font-weight:800;color:#EDEAF5}
   .crare{font-size:9.5px;color:#8E88A8;margin-top:2px}
+  /* 每日挑战 / 星尘商店 */
+  #dailyPanel,#shopPanel{position:fixed;inset:0;background:rgba(18,17,30,.98);display:none;z-index:97;
+    flex-direction:column;padding:24px 18px;overflow-y:auto}
+  #dailyPanel.show,#shopPanel.show{display:flex}
+  #dailyList,#shopList{display:flex;flex-direction:column;gap:10px;max-width:400px;margin:0 auto;width:100%}
+  .drow{background:#1B1930;border-radius:14px;padding:13px 15px;display:flex;align-items:center;gap:12px;
+    box-shadow:inset 0 0 0 1px #2A2740}
+  .drow.done{background:#16281F;box-shadow:inset 0 0 0 1px #2E6B4A}
+  .drow .mark{font-size:19px;flex:0 0 auto;width:24px;text-align:center}
+  .drow .body{flex:1 1 auto;min-width:0}
+  .drow .t{font-size:13.5px;font-weight:700;color:#EDEAF5}
+  .drow .p{font-size:11.5px;color:#8E88A8;margin-top:3px}
+  .drow .bar{height:4px;border-radius:2px;background:#2A2740;margin-top:6px;overflow:hidden}
+  .drow .bar i{display:block;height:100%;background:linear-gradient(90deg,#6FD8C8,#FFD479)}
+  #dailyReward{text-align:center;font-size:12.5px;color:#FFD479;margin-top:14px;line-height:1.7;min-height:20px}
+  .srow{background:#1B1930;border-radius:14px;padding:13px 15px;display:flex;align-items:center;gap:12px;
+    box-shadow:inset 0 0 0 1px #2A2740}
+  .srow.selected{box-shadow:inset 0 0 0 2px #FFD479}
+  .srow .swatch{width:34px;height:34px;border-radius:9px;flex:0 0 auto;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+  .srow .body{flex:1 1 auto;min-width:0}
+  .srow .t{font-size:13.5px;font-weight:700;color:#EDEAF5}
+  .srow .p{font-size:11px;color:#8E88A8;margin-top:2px}
+  .srow button{flex:0 0 auto;padding:9px 14px;font-size:12.5px;border-radius:10px;width:auto;
+    background:#FFD479;color:#141322}
+  .srow button.owned{background:#2E6B4A;color:#DFF7E9}
+  .srow button.locked{background:#242238;color:#6B6588;box-shadow:inset 0 0 0 1px #37335A}
 </style>
 </head>
 <body>
@@ -200,6 +277,8 @@
     </div>
     <div id="msg" class="dim">点一列放下方块 · 同级相邻自动合成</div>
     <div id="bar">
+      <button class="ghost" id="btnDaily">挑战</button>
+      <button class="ghost" id="btnShop">商店</button>
       <button class="ghost" id="btnCodex">图鉴</button>
       <button class="ghost" id="btnRetry">重开</button>
       <button class="ghost" id="btnLevels">选关</button>
@@ -208,6 +287,9 @@
   </div>
 </div>
 
+<div id="vignette"></div>
+<div id="clutchFx"></div>
+<div id="clutchTxt">救回来了！</div>
 <div id="toast"></div>
 
 <div id="over">
@@ -226,6 +308,27 @@
 
 <div id="discover"></div>
 
+<!-- 每日挑战：给玩家"今天该做什么"的目标 -->
+<div id="dailyPanel">
+  <div class="chead">
+    <h2>今日挑战</h2>
+    <div class="sub" id="dailySub">每天一套固定目标 · 完成后有星尘奖励</div>
+  </div>
+  <div id="dailyList"></div>
+  <div id="dailyReward"></div>
+  <button id="btnCloseDaily" style="max-width:220px;width:100%;margin:18px auto 0">返回</button>
+</div>
+
+<!-- 星尘商店：让星尘有出口 -->
+<div id="shopPanel">
+  <div class="chead">
+    <h2>星尘商店</h2>
+    <div class="sub">我的星尘：<b id="shopDust">0</b></div>
+  </div>
+  <div id="shopList"></div>
+  <button id="btnCloseShop" style="max-width:220px;width:100%;margin:18px auto 0">返回</button>
+</div>
+
 <div id="codex">
   <div class="chead">
     <h2>宝石图鉴</h2>
@@ -234,6 +337,12 @@
   <div id="codexGrid"></div>
   <button id="btnCloseCodex" style="max-width:220px;width:100%;margin:20px auto 0">返回</button>
 </div>
+
+<!-- 元游戏层（存档 / 星尘 / 主题商店 / 每日挑战）。
+     ⚠️ 必须是**普通脚本，不能加 type="module"** ——
+     file:// 协议下 ESM 会被 CORS 拦掉而**静默不加载**（页面照常显示，
+     但商店与每日挑战全部失效，且控制台未必报错）。 -->
+<script src="meta.js"></script>
 
 <script>
 (function(){
@@ -530,6 +639,8 @@
   var onGemReady = null;
   /* 图鉴：已发现的最高等级（首次合出即记录） */
   var codexSeen = {};
+  /* 是否启用 meta.js（加载失败时降级为纯本地临时状态，玩法仍可玩） */
+  var META_OK = false;
 
   var grid, score = 0, movesUsed = 0, chains = 0, combo = 0, maxCombo = 0;
   var levelIdx = 0, unlocked = 0, bestScore = 0, dust = 0, streak = 0, lastDay = '';
@@ -537,22 +648,55 @@
   var seq = null, nextQ = [], busy = false, ended = false;
   var $ = function(id){ return document.getElementById(id); };
   var boardEl = $('board');
+  var scoreEl = $('score');
+  /* 诊断计数：把"分级到底有没有生效"变成可读的数字，而不是"看起来更猛了"。
+     主控/闸门通过 window.__feel.dbg() 直接读，不依赖肉眼。 */
+  var feelDbg = { burstCalls: 0, burstParticles: 0, flyCount: 0, lastShake: 0,
+                  lastIntensity: 0, lastTier: null, clutchCount: 0, heartLevel: 0,
+                  heartPeriod: 0, lastMerge: null };
 
   function level(){ return Logic.LEVELS[levelIdx]; }
   function mult(){ return Logic.multiplierFor(combo); }
 
-  function load(){
-    try {
-      var s = JSON.parse(localStorage.getItem('merge_tower_v5') || '{}');
-      unlocked = s.unlocked || 0; bestScore = s.bestScore || 0;
-      dust = s.dust || 0; streak = s.streak || 0; lastDay = s.lastDay || '';
-      codexSeen = s.codexSeen || {};
-    } catch(e){ unlocked = 0; bestScore = 0; dust = 0; streak = 0; lastDay = ''; codexSeen = {}; }
-    if (unlocked >= Logic.LEVELS.length) unlocked = Logic.LEVELS.length - 1;
+  /* =====================================================================
+     存档与元游戏：**全部委托给 meta.js**
+     =====================================================================
+     为什么不在这里自己读写 localStorage（这是被审查实测证明会丢数据的设计）：
+
+     tower6 早期版本自带一份只序列化 6 个字段的 save()：
+       { unlocked, bestScore, dust, streak, lastDay, codexSeen }
+     而 meta.js 的存档里**还有 themes / stats / daily**。
+     于是只要本文件的 save() 被调用一次，就会把玩家**已购买的主题、统计数据、
+     每日挑战进度全部静默抹掉** —— 且 lastLoadError() 仍为 null（零信号）。
+
+     审查者实测：meta.js 侧买下 neon 后（余额 440、themes=["origin","neon"]），
+     被本文件的 save() 覆盖成 dust=40、主题静默丢失。
+
+     所以现在：**本文件一行都不直接碰 localStorage**，全部走 meta。
+     存档键由 meta.js 统一管理（SAVE_KEY，向后兼容 merge_tower_v5）。
+  ===================================================================== */
+  var meta = null;
+  try {
+    meta = MergeMeta.createMeta({ maxLevelIndex: Logic.LEVELS.length - 1 });
+  } catch (e) {
+    meta = null;
+    if (window.console && console.error) console.error('meta.js 初始化失败：', e);
   }
-  function save(){
-    try { localStorage.setItem('merge_tower_v5', JSON.stringify({ unlocked:unlocked, bestScore:bestScore, dust:dust, streak:streak, lastDay:lastDay, codexSeen:codexSeen })); } catch(e){}
+
+  /* 从 meta 同步派生出来的只读视图（保持原有变量名，最小化改动面） */
+  function syncFromMeta(){
+    if (!meta) return;
+    var st = meta.getState();
+    unlocked = Math.min(st.unlocked || 0, Logic.LEVELS.length - 1);
+    bestScore = st.bestScore || 0;
+    dust = st.dust || 0;
+    streak = st.streak || 0;
+    lastDay = st.lastDay || '';
+    codexSeen = meta.getCodexSeen() || {};
   }
+  function load(){ syncFromMeta(); }
+  /* 兼容保留：所有写入都委托给 meta，本文件不再自己拼 JSON */
+  function save(){ if (meta) { try { meta.save(); } catch(e){} } }
   function dayKey(off){
     var d = new Date(); if (off) d.setDate(d.getDate()+off);
     return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
@@ -572,16 +716,61 @@
     o.connect(g); g.connect(a.destination);
     o.start(t0); o.stop(t0 + dur + 0.02);
   }
-  function playMerge(toLevel, chain, bonus, comboLevel){
+  /* 音效分级：层数由 tiers 决定（原来是写死的 1~3 层）。
+     层数直接是"音效层数"这一项的实测数值 —— 闸门/主控可以据此对比大小合成。 */
+  function playMerge(toLevel, chain, bonus, comboLevel, sound){
     var a = audio(); if (!a) return; if (a.state === 'suspended') a.resume();
     var i = Math.min(Math.max(toLevel-2,0), PENTA.length-1);
     var oct = toLevel >= 7 ? 2 : (toLevel >= 5 ? 1.5 : 1);
     var cm = 1 + Math.min(comboLevel, 4) * 0.08;
     var base = 260 * PENTA[i] * oct * (bonus ? 1.5 : 1) * cm;
     var t0 = a.currentTime;
+    var layers = Math.max(1, Math.min(sound || 2, 9));
     tone(base, t0, 0.24, (chain?0.19:0.15), 'triangle');
-    tone(base*1.5, t0, 0.2, 0.06, 'sine');
-    if (comboLevel >= 2) tone(base*2, t0+0.04, 0.16, 0.05, 'sine');
+    if (layers >= 2) tone(base*1.5, t0, 0.2, 0.06, 'sine');
+    if (layers >= 3 && comboLevel >= 2) tone(base*2, t0+0.04, 0.16, 0.05, 'sine');
+    /* 3 层以上：按五声音阶往上叠 —— 越大声越"厚"，是"排场"的听觉对应物 */
+    var penta = [0, 2, 4, 7, 9];
+    for (var L = 4; L <= layers; L++){
+      var st = penta[(L-4) % penta.length] + 12 * Math.floor((L-4) / penta.length);
+      tone(base * Math.pow(2, st/12), t0 + (L-4)*0.035, 0.22, 0.045, 'sine');
+    }
+    feelDbg.lastSound = layers;
+  }
+  /* 绝境逢生专属音：上行五度 + 长尾，和普通合成明显区分 */
+  function playClutch(){
+    var a = audio(); if (!a) return; if (a.state === 'suspended') a.resume();
+    var t0 = a.currentTime;
+    [0, 7, 12, 19].forEach(function(s, i){
+      tone(392 * Math.pow(2, s/12), t0 + i*0.06, 0.5, 0.16, 'sine');
+    });
+    tone(130.81, t0, 0.7, 0.20, 'triangle');
+  }
+  /* 危险心跳的低频"咚"。频率由 heartParams().period 决定 —— 越高越急促。 */
+  function playHeart(){
+    var a = audio(); if (!a) return; if (a.state === 'suspended') a.resume();
+    var p = heartParams(Logic.maxHeight(grid));
+    if (!p.on) return;
+    var t0 = a.currentTime, o = a.createOscillator(), g = a.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(72, t0);
+    o.frequency.exponentialRampToValueAtTime(38, t0 + 0.16);
+    g.gain.setValueAtTime(p.vol, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.20);
+    o.connect(g); g.connect(a.destination);
+    o.start(t0); o.stop(t0 + 0.22);
+  }
+  /* 心跳循环：周期每次重新读 heartParams —— 这样"堆得越高 → 越急促"是自动的。
+     注意是**常驻循环**（危险结束后用 watch 间隔继续等），而不是"没危险就停":
+     停掉之后没人再把它叫起来，玩家堆到顶时反而没有心跳 —— 正是"危险是静态的"的另一种翻版。 */
+  var heartTimer = null, HEART_WATCH = 500;
+  function heartLoop(){
+    if (heartTimer){ clearTimeout(heartTimer); heartTimer = null; }
+    var p = heartParams(Logic.maxHeight(grid));
+    feelDbg.heartLevel = p.level; feelDbg.heartPeriod = p.period; feelDbg.heartOn = p.on;
+    if (ended) return;                       // 结算了就停
+    if (p.on) playHeart();
+    heartTimer = setTimeout(heartLoop, p.on ? p.period : HEART_WATCH);
   }
   function playBoom(){
     var a = audio(); if (!a) return; if (a.state === 'suspended') a.resume();
@@ -616,12 +805,141 @@
     var t0=a.currentTime; [0,-2,-5,-9].forEach(function(s,i){ tone(392*Math.pow(2,s/12), t0+i*0.11, 0.4, 0.12, 'triangle'); }); }
   function buzz(p){ if (navigator.vibrate) { try { navigator.vibrate(p); } catch(e){} } }
 
+  /* =====================================================================
+     反馈分级（feedback grading）—— 本轮的"反馈够不够"核心
+
+     问题（用户原话「反馈不够充足」）：
+       · 消 3 块和消 7 块的排场几乎一样 —— 原代码粒子数只看 e.to：
+             burst(rect, color, e.to>=6?12:(e.to>=4?9:6))
+         合成规模（合掉几块）完全没进公式，而计分是 n² 的：
+             scoreFor(lvl+1) —— 大块本该更值钱、更有排场。
+       · 震动只有一档 .shake；音效层数只有 1~3 层；提示字号恒定 32px。
+
+     做法：所有强度都从**一个**函数出来，不散落魔法数字。
+       intensityFor(level, chain, blocks, combo) → 1..12 的连续强度
+       再由 TIERS 把它映射成各通道的具体数值（粒子/震动/音效/字号/浮字）。
+
+     ⚠️ 为什么强度要连续（而不是只按等级查表）：
+       同一次合成里「合掉几块」的差异必须能被放大，否则 `n²` 计分在表现上
+       完全没有对应的视觉重量 —— 而这正是用户说「排场相同」的根因。
+     ===================================================================== */
+  var FEEL = {
+    /* 强度 → 各通道。索引 = clamp(round(intensity),1,12)。 */
+    TIERS: [
+      /* 0 */ { particles: 0,  power: 1.0,  shake: 0, sound: 0, flySize: 25 },
+      /* 1 */ { particles: 7,  power: 1.00, shake: 1, sound: 2, flySize: 25 },
+      /* 2 */ { particles: 9,  power: 1.10, shake: 1, sound: 2, flySize: 27 },
+      /* 3 */ { particles: 12, power: 1.20, shake: 1, sound: 3, flySize: 29 },
+      /* 4 */ { particles: 15, power: 1.30, shake: 2, sound: 3, flySize: 31 },
+      /* 5 */ { particles: 18, power: 1.40, shake: 2, sound: 4, flySize: 34 },
+      /* 6 */ { particles: 22, power: 1.50, shake: 2, sound: 4, flySize: 36 },
+      /* 7 */ { particles: 26, power: 1.62, shake: 3, sound: 5, flySize: 39 },
+      /* 8 */ { particles: 31, power: 1.74, shake: 3, sound: 5, flySize: 42 },
+      /* 9 */ { particles: 36, power: 1.86, shake: 3, sound: 6, flySize: 45 },
+      /* 10 */ { particles: 42, power: 2.00, shake: 4, sound: 7, flySize: 48 },
+      /* 11 */ { particles: 48, power: 2.15, shake: 4, sound: 8, flySize: 52 },
+      /* 12 */ { particles: 56, power: 2.30, shake: 4, sound: 9, flySize: 56 }
+    ],
+    CLUTCH_BONUS: 2.5,     // 绝境逢生：在既有强度上再顶一档
+    CLUTCH_SHAKE: 4,
+    /* 心跳：危险强度 dangerLevel(0..1) → 周期与音量。
+       越高越**急促**（周期变小）、越**响**（音量变大）—— 这是"压迫感随高度递增"的量化。 */
+    HEART: { periodMax: 1000, periodMin: 380, volMin: 0.05, volMax: 0.20, gate: 0.001, floor: 3 }
+  };
+
+  /* 把「这一手消掉几块」显式加到字号与粒子数上，让单调性**结构性成立**，
+     而不是碰巧由档位取整凑出来：
+       同一等级下 blocks=3 与 blocks=7 必然差 (7-3)*0.9 = 3.6px 字号、
+                                             (7-3)*1.6 = 6.4 个粒子
+     为什么不能只靠 intensityFor → TIERS 查表：档位是取整的，
+     相邻块数有可能落到同一个档 → 字号相同 → "大合成与小合成排场相同"原样复发。
+     用户抱怨的就是这个，所以这里用算式兜死，不靠巧合。 */
+  var BLOCK_FLY_PX = 0.9, BLOCK_PARTICLE = 1.6;
+  function flySizeFor(tier, blocks){
+    var b = Math.max(2, blocks || 2);
+    return Math.round((tier.flySize + (b - 2) * BLOCK_FLY_PX) * 10) / 10;
+  }
+  function particlesFor(tier, blocks){
+    var b = Math.max(2, blocks || 2);
+    return Math.round(tier.particles + (b - 2) * BLOCK_PARTICLE);
+  }
+
+  /* 分级核心。四个输入都是「越大越猛」：
+       level  合成后等级（1..10 对应宝石，越高越稀有）
+       chain  这次落子内的连锁层数（1 = 没连锁）
+       blocks 这次合掉几块（2..8+）—— 本轮新增的关键维度
+       combo  连击倍率档位
+     返回连续强度（未取整），调用方用 tierFor() 取档。 */
+  function intensityFor(level, chain, blocks, combo){
+    var lv     = Math.max(0, (level || 1) - 1);
+    var ch     = Math.max(1, chain || 1);
+    var blk    = Math.max(2, blocks || 2);
+    var cb     = Math.max(0, combo || 0);
+    var i  = 1
+           + lv * 0.62                                   // 等级：主维度
+           + (ch - 1) * 1.15                             // 连锁层数
+           + (blk - 2) * 0.58                            // 合成规模 ← 本轮新增
+           + Math.min(cb, 4) * 0.30;                     // 连击档位
+    return Math.max(0, Math.min(i, 12));
+  }
+  function tierFor(intensity){
+    var i = Math.round(Math.max(0, Math.min(intensity, 12)));
+    return FEEL.TIERS[i];
+  }
+  /* 危险强度：最高列高度 → 0..1，以及由此派生的周期/音量/红晕。
+     重要边界：**h == ROWS-2 (=6) 时必须是"开"**，而且强度 > 0。
+     验收口径原文是「最高列达到 ROWS-2 时触发心跳/脉冲效果」——
+     如果把 0 点定在 ROWS-2，那一格恰好 lv=0 → on=false，"刚进危险区"反而没反应，
+     与验收条件差一格，属于典型的"看着像实现了、测出来是没触发"。
+     所以把 0 点下压到 ROWS-3（=5 层）：
+       h=5 → 0.00（关）
+       h=6 → 0.33（开，刚进危险区）
+       h=7 → 0.67
+       h=8 → 1.00（满列，最强）
+     既保证"达到阈值即触发"，又保证"越高越强"严格单调。 */
+  function heartParams(maxH){
+    var floor = Logic.ROWS - 3;                     // 5：此高度及以下无危险
+    var span  = Logic.ROWS - floor;                 // 3
+    var lv = (maxH - floor) / span;
+    lv = Math.max(0, Math.min(lv, 1));
+    return {
+      level: Math.round(lv * 1000) / 1000,
+      on: maxH >= Logic.ROWS - 2 && lv > FEEL.HEART.gate,   // 阈值以下恒关
+      /* 越高越急促：1000ms → 380ms */
+      period: Math.round(FEEL.HEART.periodMax + (FEEL.HEART.periodMin - FEEL.HEART.periodMax) * lv),
+      /* 越高越响：0.05 → 0.20 */
+      vol: Math.round((FEEL.HEART.volMin + (FEEL.HEART.volMax - FEEL.HEART.volMin) * lv) * 1000) / 1000,
+      /* 红晕不透明度（真实视觉量，跟着 lv 单调增） */
+      vig: Math.round(lv * 0.95 * 100) / 100,
+      line: Math.round((1 + lv) * 100) / 100        // 危险线粗细倍率 1..2
+    };
+  }
+  /* 绝境逢生判定 —— 独立纯函数，便于单测（见 window.__feel.isClutch）。
+
+     触发口径（与 t3 闸门对齐，闸门就是按它判的 —— 两边口径不一致等于没验收）：
+       **一次合成发生时，合成前的最高列高 ≥ ROWS-2（=6，已在危险区）**
+     afterH 保留在签名里但**不参与判定**：它只决定演出档次（见 isDeepClutch）。
+     为什么不要求"合成后掉出危险区"：那个条件要求"刚好从 6 掉到 5 且别列都不在 6"，
+     自然对局里极难稳定出现 —— 一个几乎不触发的机制等于没有机制。
+     而"在危险区里还能合出东西"本身就是逆势翻盘的瞬间，叙事上成立。
+
+     验收反例：开局低处（最高列 ≤ 3）的普通合成**不得**触发。
+     闸门会专门做这个反例，防"永远开着"——那会退化成噪音，玩家很快无视它。
+     演出强度另有一档 isDeepClutch（差一格就死 → 退回安全区），只影响文案。 */
+  function isClutch(beforeH, afterH){
+    return beforeH >= Logic.ROWS - 2;
+  }
+  /* 更极端的一档：差一格就死（ROWS-1）→ 合成后退回安全区（≤ROWS-3）。只影响演出文案强度。 */
+  function isDeepClutch(beforeH, afterH){
+    return beforeH >= Logic.ROWS - 1 && afterH <= Logic.ROWS - 3;
+  }
+
   /* ---------- 视觉 ---------- */
   function cellRect(c, r){
     var el = boardEl.querySelector('.cell[data-c="'+c+'"][data-r="'+r+'"]');
     return el ? el.getBoundingClientRect() : null;
   }
-  function burst(rect, color, n, power){
+  function burst(rect, color, n, power, size){
     if (!rect) return;
     var cx = rect.left+rect.width/2, cy = rect.top+rect.height/2;
     for (var k=0;k<n;k++){
@@ -636,14 +954,32 @@
         setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); },720); })
       (p, Math.cos(ang)*dist, Math.sin(ang)*dist-16);
     }
+    feelDbg.burstCalls++; feelDbg.burstParticles += n;
   }
-  function flyScore(rect, pts, big, bonus){
+  function flyScore(rect, pts, big, bonus, tier){
     if (!rect) return;
     var d=document.createElement('div'); d.className='fly'; d.textContent='+'+pts;
-    d.style.fontSize=(big?40:25)+'px';
+    var fs = tier ? tier.flySize : (big?40:25);
+    d.style.fontSize=fs+'px';
     d.style.color = bonus ? '#FFD479' : (big ? '#FFD479' : '#EDEAF5');
+    /* 闸门（t3）要求的可观测信号：这一笔浮字对应多大的合成。
+       data-blocks = **这一手总共消掉几块**（整条合成链的合计，不是单个事件）
+       data-lv     = 合成后等级（链里最终产出的那个等级，供闸门按等级分组）
+       没有它们，外部只能看到"多了一个 .fly"，无法比较大小合成 ——
+       而那正是用户抱怨的「大合成与小合成排场相同」。 */
+    if (tier){
+      d.dataset.blocks = String(tier.blocks);
+      d.dataset.lv = String(tier.lv);
+      d.dataset.maxlv = String(tier.level);
+      d.dataset.intensity = String(tier.intensity);
+      d.dataset.shake = String(tier.shake);
+      d.dataset.sound = String(tier.sound);
+      d.dataset.particles = String(tier.particles);   // 声明值；闸门另有 .p 计数作独立证据
+      d.dataset.clutch = tier.clutch ? '1' : '0';
+    }
     d.style.left=(rect.left+rect.width/2-26)+'px'; d.style.top=(rect.top+rect.height/2-12)+'px';
     document.body.appendChild(d);
+    feelDbg.flyCount++;
     requestAnimationFrame(function(){
       d.style.transition='transform .95s cubic-bezier(.15,.8,.3,1), opacity .95s ease';
       d.style.transform='translateY(-72px) scale(1.14)'; d.style.opacity='0'; });
@@ -664,8 +1000,93 @@
     var t=$('toast'); t.textContent=text; t.style.color=color||'#FFD479';
     t.classList.remove('show'); void t.offsetWidth; t.classList.add('show');
   }
-  function shake(){ document.body.classList.remove('shake'); void document.body.offsetWidth;
-    document.body.classList.add('shake'); setTimeout(function(){ document.body.classList.remove('shake'); },340); }
+  /* 震动分级：档位 1..4 → body 上的 .s1...s4（各自独立 keyframes，幅度真不一样）。
+     传 0 = 不震（原来的"没合成就不震"行为保持）。 */
+  var shakeTimer = null;
+  function shake(tier){
+    var t = Math.max(1, Math.min(tier || 2, 4));
+    feelDbg.lastShake = t;
+    document.body.classList.remove('shake','s1','s2','s3','s4');
+    void document.body.offsetWidth;
+    document.body.classList.add('shake', 's' + t);
+    if (shakeTimer) clearTimeout(shakeTimer);
+    shakeTimer = setTimeout(function(){
+      document.body.classList.remove('shake','s1','s2','s3','s4'); shakeTimer = null;
+    }, 470);
+  }
+  /* 绝境逢生专属演出：全屏闪光 + 大字 + 最强震动 + 叠层音 */
+  function clutchFx(){
+    var f = $('clutchFx'), t = $('clutchTxt');
+    if (f){ f.classList.remove('show'); void f.offsetWidth; f.classList.add('show');
+      setTimeout(function(){ f.classList.remove('show'); }, 900); }
+    if (t){ t.classList.remove('show'); void t.offsetWidth; t.classList.add('show');
+      setTimeout(function(){ t.classList.remove('show'); }, 1250); }
+    playClutch();
+    buzz([30,45,30,45,60]);
+  }
+
+  /* ---------- 分数滚动（不是跳变） ----------
+     原实现：render() 里 sc.textContent = score，分数**瞬间跳**到新值。
+     用户说"反馈不够充足"的一条子项 —— 数字滚动是"我赚到了"的体感来源。
+     用 rAF 手动插值（**不能**用 CSS transition：文字内容不会变）。
+     采样口径：任意时刻 #score 的文本都可能落在两端点之间，闸门密集采样即可见中间值。 */
+  var scoreView = 0, scoreFrom = 0, scoreTo = 0, scoreRollId = 0, scoreRollStart = 0;
+  var SCORE_ROLL_MS = 420;
+  function rollScore(){
+    scoreTo = score;
+    if (scoreView === scoreTo) return;
+    if (scoreRollId) cancelAnimationFrame(scoreRollId);
+    scoreFrom = scoreView;
+    scoreRollStart = (function(){
+      return window.performance && performance.now ? performance.now() : Date.now();
+    })();
+    var ease = function(t){ return 1 - Math.pow(1 - t, 3); };   // easeOutCubic
+    var step = function(now){
+      var ms = (window.performance && performance.now ? performance.now() : Date.now()) - scoreRollStart;
+      var p = Math.min(1, ms / SCORE_ROLL_MS);
+      scoreView = Math.round(scoreFrom + (scoreTo - scoreFrom) * ease(p));
+      paintScore();
+      if (p < 1) scoreRollId = requestAnimationFrame(step);
+      else { scoreRollId = 0; scoreView = scoreTo; paintScore(); }
+    };
+    scoreRollId = requestAnimationFrame(step);
+  }
+  function paintScore(){ scoreEl.textContent = scoreView; }
+
+  /* ---------- 危险心跳（动态压迫感） ----------
+     原实现：$('danger').className = near ? 'on' : '' —— 静态，只有一条细线变红。
+     现在：红晕呼吸 + 线脉冲，强度和频率都由 heartParams(maxHeight) 决定。
+     两路证据都写：data-level（数值）与真实的 animation-duration / opacity（视觉）。 */
+  function applyDanger(){
+    var h = Logic.maxHeight(grid);
+    var p = heartParams(h);
+    var d = $('danger'), v = $('vignette');
+    if (d){
+      d.className = p.on ? 'on beat' : '';
+      d.dataset.level = p.level.toFixed(2);
+      d.dataset.height = String(h);
+      /* 危险线的可见性由 keyframes 的 opacity 负责（0→1→0.42→0.92）。
+         这里**不能**再设内联 opacity —— 内联样式优先级高于 keyframes，
+         实测后果：整条线被钉死在 0.45 不再呼吸，"静态"的老毛病原样复发。 */
+      d.style.opacity = p.on ? '' : '0';
+      d.style.animationDuration = p.period + 'ms';
+      d.style.transform = 'scaleY(' + p.line + ')';
+      /* 除了会动的动画周期，再给一个**静态可读**的视觉量：
+         辉光半径随高度增大（4px → 26px）。闸门/量具可以直接读计算样式，
+         不需要"恰好在动画的某一帧采样"就能证明强度随高度变化。 */
+      d.style.boxShadow = p.on
+        ? '0 0 ' + Math.round(4 + p.level * 22) + 'px rgba(255,80,80,.9)'
+        : 'none';
+    }
+    if (v){
+      v.className = p.on ? 'beat' : '';
+      v.dataset.level = p.level.toFixed(2);
+      v.style.animationDuration = p.period + 'ms';
+      v.style.opacity = p.on ? '' : '0';   // 同上：动画期间交给 keyframes
+      /* 同样给一个静态量：红晕的"最深处"随高度加深 */
+      v.style.setProperty('--deep', String(Math.round((0.30 + p.level * 0.32) * 100) / 100));
+    }
+  }
 
   /* ---------- 渲染 ---------- */
   function blockClass(v){
@@ -690,9 +1111,13 @@
     if (v === Logic.RAINBOW) return 20;
     return 22;
   }
-  /* 把宝石图铺满格子。图未就绪时保留 emoji 兜底，不阻塞玩法。 */
+  /* 把宝石图铺满格子。图未就绪时保留 emoji 兜底，不阻塞玩法。
+     dataset.hyd 标记「这一格已经换成真图了」—— 是 needNew 判据的一部分：
+     只比等级会让「先 emoji 后到图」的格子永远不再重建（见 render()）。 */
+  var LEGACY_RENDER = false;   // 仅供量具做 A/B 对照，见 window.__feel.setLegacyRender
   function fillGem(el, lv){
     el.textContent = '';
+    el.dataset.hyd = '';
     el.style.background = blockBg(lv);
     if (GEM_IMG_STATE[lv] === 'ok' && GEM_IMG[lv]){
       var im = GEM_IMG[lv].cloneNode();
@@ -701,6 +1126,7 @@
       el.appendChild(im);
       el.style.background = '';   // 有图就不需要底色
       el.style.fontSize = '';
+      el.dataset.hyd = '1';
     } else {
       el.textContent = gemOf(lv).e;
       el.style.fontSize = fontOf(lv) + 'px';
@@ -729,6 +1155,8 @@
     if (ref && d){ var br=boardEl.getBoundingClientRect(), rr=ref.getBoundingClientRect();
       d.style.top=(rr.top-br.top+rr.height*0.4)+'px'; }
   }
+  /* 危险线位置 + 心跳强度一起更新。分开写会导致 resize 后强度丢失。 */
+  function updateDanger(){ positionDanger(); applyDanger(); }
   function render(opts){
     opts = opts || {};
     var popSet={}, boomSet={}, smashSet={}, bornSet={};
@@ -743,7 +1171,21 @@
       if (!cell) continue;
       var v=grid[Logic.idx(c,r)], existing=cell.firstChild;
       if (v < 0){ if (existing) cell.removeChild(existing); continue; }
-      var needNew = !existing || Number(existing.dataset.lv) !== v;
+      /* 重建判据 —— 这里修的是「新等级宝石永久残留 emoji」的既有缺陷。
+         原判据只比等级：
+             var needNew = !existing || Number(existing.dataset.lv) !== v;
+         而图是**异步**加载的：首次出现某等级时图还没到，fillGem 先渲染 emoji；
+         等 im.onload 触发 onGemReady → render() 时等级没变 → needNew=false → 不重建，
+         于是这一格**永久**停在 emoji，之后再也不会自愈（实测确认）。
+         现在再加一条：这一格是普通块、但还没挂上 <img>，就重建。
+         dataset.hyd 由 fillGem 显式维护：「已换成真图」= '1'。
+         用 dataset.hyd 而不是 querySelector('img')，是为了让**没加载完/加载失败**的
+         两种情况都不会造成无限重建（GEM_IMG_STATE 仍为 loading/fail 时 hyd 为空，
+         但重建一次后 needNew 依旧为真 → 每帧重建）。
+         所以这里同时要求「图确实已就绪」才重建 —— 图没到就继续用 emoji，等它到。 */
+      var lvChanged = !existing || Number(existing.dataset.lv) !== v;
+      var imgReady = Logic.isNormal(v) && GEM_IMG_STATE[v] === 'ok' && !!GEM_IMG[v];
+      var needNew = lvChanged || (!LEGACY_RENDER && imgReady && existing.dataset.hyd !== '1');
       if (needNew){
         if (existing) cell.removeChild(existing);
         var b=document.createElement('div');
@@ -763,8 +1205,15 @@
         cell.appendChild(b);
       }
     }
-    var sc=$('score');
-    if (sc.textContent !== String(score)){ sc.textContent=score; sc.classList.remove('bump'); void sc.offsetWidth; sc.classList.add('bump'); }
+    /* 分数滚动：进度由 rAF 驱动，render 只负责"把目标值交给滚动器"。
+       注意这里**不能**再写 sc.textContent = score —— 那正是"跳变"本身。
+       bump 缩放动画挂在"目标值变化"上（而不是"文字变化"上）：
+       滚动期间文字每帧都变，按文字触发会变成一直在抖。 */
+    if (scoreEl.dataset.bumpTarget !== String(score)){
+      scoreEl.dataset.bumpTarget = String(score);
+      scoreEl.classList.remove('bump'); void scoreEl.offsetWidth; scoreEl.classList.add('bump');
+    }
+    rollScore();
     var mxl = Logic.maxLevel(grid) || 1;
     $('best').textContent = mxl >= 1 ? gemName(mxl) : '—';
     $('chainN').textContent = chains;
@@ -785,9 +1234,9 @@
     document.body.classList.toggle('armed', !!armed);
 
     updateCombo(); updateGoal();
-    var near=false;
-    for (var cc=0;cc<Logic.COLS;cc++) if (Logic.height(grid,cc) >= Logic.ROWS-2) near=true;
-    $('danger').className = near ? 'on' : '';
+    /* 危险心跳：原实现是一句 `danger.className = near ? 'on' : ''` —— 静态。
+       现在交给 applyDanger()，强度随最高列高连续变化（data-level + 真实样式两路证据）。 */
+    applyDanger();
     updateNext();
   }
   function updateCombo(){
@@ -867,20 +1316,44 @@
     }, 170);
 
     function afterDrop(){
+      /* 本回合的"危险峰值"：落子（并压实）之后的最高列高。
+         绝境逢生要判定的是「曾经进入过危险区，然后被这一次合成解除」，
+         所以峰值必须在这里取 —— 取合成之后的值就永远 ≥ 不到阈值，机制永不触发。 */
+      var hPeak = Logic.maxHeight(grid);
       var events = Logic.resolve(grid, bonusCol, mult());
       if (events.length){
         var popCells=[], bornCells=[], total=0, lastRect=null, anyBonus=false;
-        var newlyFound = null;
+        var totalBlocks = 0, maxBlocks = 0, maxBlockLv = 1;
+        var particles = 0, maxIntensity = 0, maxTier = null;
+        var newlyFound = null;      // ← 必须在这里声明！漏了它会抛 ReferenceError，
+                                    //   下面所有特效（浮字/震动/音效）全部执行不到 ——
+                                    //   与上一轮 gemName is not defined 是同一类静默失效。
         for (var i=0;i<events.length;i++){
           var e = events[i];
           popCells = popCells.concat(e.cells);
           bornCells.push(e.at);
           total += e.pts;
           if (e.bonus) anyBonus = true;
-          burst(cellRect(e.col, e.row), COLORS[(e.to-1)%COLORS.length], e.to>=6?12:(e.to>=4?9:6));
+          totalBlocks += e.cells.length;
+          if (e.cells.length > maxBlocks){ maxBlocks = e.cells.length; maxBlockLv = e.to; }
+          /* 每一个事件**各自**按自己的等级+块数取强度 ——
+             整条链共用一个强度会让"链里有个大块"被平均掉，
+             正是"大小合成排场相同"的另一种形式。 */
+          var ie = intensityFor(e.to, events.length, e.cells.length, combo + 1);
+          var te = tierFor(ie);
+          if (ie > maxIntensity){ maxIntensity = ie; maxTier = te; }
+          var nP = particlesFor(te, e.cells.length);
+          particles += nP;
+          burst(cellRect(e.col, e.row), COLORS[(e.to-1)%COLORS.length], nP, te.power);
           if (i === events.length-1) lastRect = cellRect(e.col, e.row);
           // 图鉴：首次合出这个等级就记下来，并弹出「新发现」
-          if (!codexSeen[e.to]){ codexSeen[e.to] = 1; newlyFound = e.to; save(); }
+          // 写入必须走 meta.markCodexSeen()（它内部会 save 到统一的存档键）。
+          // 早期版本在这里直写 codexSeen 再调自建 save()，会把 themes/stats/daily 一起抹掉。
+          if (!codexSeen[e.to]){
+            codexSeen[e.to] = 1;
+            newlyFound = e.to;
+            if (meta) { try { meta.markCodexSeen(e.to); } catch(err){} }
+          }
           ensureGemImg(e.to);
         }
         score += total;
@@ -888,16 +1361,61 @@
         combo++;
         if (combo > maxCombo) maxCombo = combo;
         var topLv = events[events.length-1].to;
-        flyScore(lastRect, total, topLv>=5, anyBonus);
-        playMerge(topLv, events.length>1, anyBonus, combo);
+
+        /* ---- 绝境逢生：先判，再决定演出档位 ---- */
+        var afterH = Logic.maxHeight(grid);
+        var clutch = isClutch(hPeak, afterH);
+        var deep = isDeepClutch(hPeak, afterH);
+        if (clutch){
+          feelDbg.clutchCount++;
+          maxIntensity = Math.min(maxIntensity + FEEL.CLUTCH_BONUS, 12);
+          maxTier = tierFor(maxIntensity);
+        }
+
+        var tier = {
+          level: Math.max(topLv, maxBlockLv), blocks: totalBlocks, maxBlocks: maxBlocks,
+          lv: topLv, intensity: Math.round(maxIntensity*100)/100,
+          shake: clutch ? FEEL.CLUTCH_SHAKE : maxTier.shake,
+          sound: maxTier.sound,
+          flySize: flySizeFor(maxTier, totalBlocks),   // ← 字号按"这一手消几块"缩放
+          particles: particles, clutch: clutch, deep: deep, beforeH: hPeak, afterH: afterH
+        };
+        feelDbg.lastIntensity = tier.intensity;
+        feelDbg.lastTier = tier;
+        feelDbg.lastMerge = { blocks: totalBlocks, maxBlocks: maxBlocks, toLevel: topLv,
+                              intensity: tier.intensity, particles: particles, shake: tier.shake,
+                              sound: tier.sound, flySize: tier.flySize, clutch: clutch,
+                              beforeH: hPeak, afterH: afterH };
+
+        flyScore(lastRect, total, topLv>=5, anyBonus, tier);
+        playMerge(topLv, events.length>1, anyBonus, combo, tier.sound);
+        shake(tier.shake);                        // ← 分级震动（1..4 档，独立 keyframes）
+        if (clutch) clutchFx();                   // ← 专属强化演出：全屏闪光 + 大字 + 最强震动
+
         if (newlyFound && newlyFound >= 3) {
           // 新宝石比连击提示更重要 —— 这正是"想看下一个长什么样"的驱动力
-          showDiscovery(newlyFound);
+          /* 但"绝境逢生"与"新发现"可能在同一手同时发生（濒死时合出全新等级）。
+             两者都是全屏居中的庆祝：clutchTxt 大字在 38%，dcard 卡片占 35%~65%，
+             实测 6 种视口**全部重叠 52px**（大字整行落在卡片里，且卡片 z-index 92
+             盖住 z-index 86 的大字 → 文字被卡片压掉一半，看起来像渲染错乱）。
+             为什么不挪位置：320x568 的"头部底边~卡片顶边"安全带只有 49px < 大字 52px，
+             844x390 横屏更是 -43px（卡片顶边比头部底边还高）—— **不存在**一个
+             能同时避开两者的位置，挪到哪都会压到东西。
+             所以改成**串行**：先让「救回来了！」演完（clutchTxt 动画 1.15s），
+             再弹「新发现」。两场庆祝都完整、都看得见，也不会互相抢注意力。 */
+          if (clutch) {
+            setTimeout(function(){ showDiscovery(newlyFound); }, 1300);
+          } else {
+            showDiscovery(newlyFound);
+          }
         }
-        else if (combo >= 4) { toast('连击 ×' + mult().toFixed(1) + '！', '#FFD479'); shake(); }
-        else if (topLv >= 6) { shake(); toast('漂亮', '#6FD8C8'); }
+        else if (clutch) { toast(deep ? '救回来了！' : '稳住了！', '#FFD479'); }
+        else if (combo >= 4) { toast('连击 ×' + mult().toFixed(1) + '！', '#FFD479'); }
+        else if (topLv >= 6) { toast('漂亮', '#6FD8C8'); }
         else if (anyBonus) { toast('双倍 ×2', '#FFD479'); }
-        say('合成出 ' + gemName(topLv) + '  +' + total + (anyBonus?'（双倍）':'') + (combo>=2?'（连击 ×'+mult().toFixed(1)+'）':''));
+        say('合成出 ' + gemName(topLv) + '  +' + total + (anyBonus?'（双倍）':'')
+            + (combo>=2?'（连击 ×'+mult().toFixed(1)+'）':'')
+            + (clutch?'（绝境逢生）':''));
         render({ pop: popCells, born: bornCells });
         setTimeout(function(){ render(); finishTurn(); }, 270);
       } else {
@@ -943,8 +1461,145 @@
   }
 
   /* 图鉴页 */
-  function openCodex(){
-    var wrap = $('codexGrid');
+  /* =====================================================================
+     每日挑战（次要玩法）+ 星尘商店（点缀玩法）
+     =====================================================================
+     用户反馈：「次要玩法缺少，点缀玩法缺少」。
+     更具体地说 —— 上一轮我加了"星尘"这个货币却**从没给它任何出口**，
+     玩家攒了几百星尘发现什么都买不了。这是半成品，直接导致"点缀玩法缺少"的体感。
+     下面这两个面板就是补这个洞：星尘能花了，每天也有明确目标了。
+  ===================================================================== */
+
+  /* ---------- 每日挑战 ---------- */
+  /* ⚠️ 字段名必须与 meta.js 的 makeDaily() 对齐，不能靠猜：
+     getDaily() 返回 { date, tasks[], doneCount, total, allDone, claimed, streak, allClearReward }
+     每个 task 是 { id, kind, text, target, reward, progress, done }
+     （我第一版按 items/label 读，结果面板永远空白 —— 这是"接口靠猜"的典型翻车。） */
+  function openDaily(){
+    if (!meta){ say('存档未就绪，无法读取每日挑战', true); return; }
+    var d = meta.getDaily();
+    var list = $('dailyList'); list.innerHTML = '';
+    var tasks = (d && d.tasks) ? d.tasks : [];
+    for (var i = 0; i < tasks.length; i++){
+      (function(it){
+        var row = document.createElement('div');
+        row.className = 'drow' + (it.done ? ' done' : '');
+        var mk = document.createElement('div'); mk.className = 'mark'; mk.textContent = it.done ? '✅' : '◻️';
+        var body = document.createElement('div'); body.className = 'body';
+        var t = document.createElement('div'); t.className = 't'; t.textContent = it.text || it.kind;
+        var p = document.createElement('div'); p.className = 'p';
+        var cur = (it.progress === undefined ? 0 : it.progress);
+        p.textContent = cur + ' / ' + it.target + '　奖励 ' + it.reward + ' 星尘';
+        var bar = document.createElement('div'); bar.className = 'bar';
+        var fill = document.createElement('i');
+        var pct = it.target > 0 ? Math.min(100, cur / it.target * 100) : 0;
+        fill.style.width = pct + '%';
+        bar.appendChild(fill);
+        body.appendChild(t); body.appendChild(p); body.appendChild(bar);
+        row.appendChild(mk); row.appendChild(body);
+        list.appendChild(row);
+      })(tasks[i]);
+    }
+    var doneN = d ? d.doneCount : 0;
+    var totalN = d ? d.total : 0;
+    $('dailySub').textContent = (d ? d.date : '') + ' · 已完成 ' + doneN + ' / ' + totalN;
+    $('dailyReward').innerHTML = (d && d.claimed)
+      ? '今天的奖励已领取 · 明天再来'
+      : (d && d.allDone
+          ? '全部完成！结算时自动发放 <b>' + d.allClearReward + '</b> 星尘'
+          : '完成全部 ' + totalN + ' 项可得 <b>' + (d ? d.allClearReward : 0) + '</b> 星尘');
+    $('dailyPanel').classList.add('show');
+  }
+
+  /* ---------- 星尘商店 ---------- */
+  function openShop(){
+    if (!meta){ say('存档未就绪，无法打开商店', true); return; }
+    var themes = meta.listThemes();
+    var myDust = meta.getDust();
+    $('shopDust').textContent = myDust;
+    var list = $('shopList'); list.innerHTML = '';
+    for (var i = 0; i < themes.length; i++){
+      (function(th){
+        var row = document.createElement('div');
+        row.className = 'srow' + (th.selected ? ' selected' : '');
+        var sw = document.createElement('div'); sw.className = 'swatch';
+        // 用主题自己的棋盘/强调色做色板预览
+        sw.style.background = 'linear-gradient(135deg,' +
+          (th.colors && th.colors.board ? th.colors.board : '#222') + ',' +
+          (th.colors && th.colors.accent ? th.colors.accent : '#888') + ')';
+        var body = document.createElement('div'); body.className = 'body';
+        var t = document.createElement('div'); t.className = 't'; t.textContent = th.name;
+        var p = document.createElement('div'); p.className = 'p';
+        p.textContent = th.owned
+          ? (th.selected ? '使用中' : '已拥有')
+          : (th.price + ' 星尘' + (myDust >= th.price ? '' : '（还差 ' + (th.price - myDust) + '）'));
+        body.appendChild(t); body.appendChild(p);
+        var btn = document.createElement('button');
+        if (th.owned && th.selected){ btn.textContent = '使用中'; btn.className = 'owned'; btn.disabled = true; }
+        else if (th.owned){ btn.textContent = '使用'; btn.onclick = function(){ doSelectTheme(th.id); }; }
+        else {
+          btn.textContent = '购买';
+          if (myDust < th.price){ btn.className = 'locked'; btn.disabled = true; }
+          else btn.onclick = function(){ doBuyTheme(th.id); };
+        }
+        row.appendChild(sw); row.appendChild(body); row.appendChild(btn);
+        list.appendChild(row);
+      })(themes[i]);
+    }
+    $('shopPanel').classList.add('show');
+  }
+
+  function doBuyTheme(id){
+    if (!meta) return;
+    var r = null;
+    try { r = meta.buyTheme(id); } catch(e){ r = { ok:false, reason:String(e && e.message || e) }; }
+    if (r && r.ok === false){
+      toast(r.reason === 'insufficient_dust' ? '星尘不够' : ('购买失败：' + (r.reason || '未知')), '#FF8A8A');
+      return;
+    }
+    /* buyTheme **不会自动启用**（返回的 theme.selected = false），
+       必须显式 selectTheme —— 否则玩家花了星尘却看不到任何变化。
+       这是实测发现的接口语义，不是猜的。 */
+    var th = null;
+    try { th = meta.selectTheme(id); } catch(e){}
+    if (!th && r && r.theme) th = r.theme;
+    if (th) applyTheme(th);
+    toast('已购买并启用', '#FFD479');
+    playWin(); buzz([16,30,16]);
+    openShop();                 // 刷新面板
+  }
+
+  function doSelectTheme(id){
+    if (!meta) return;
+    var t = null;
+    try { t = meta.selectTheme(id); } catch(e){}
+    if (t) applyTheme(t);
+    toast('已切换主题', '#6FD8C8');
+    openShop();
+  }
+
+  /* 把主题配色真正应用到页面（否则"购买"只是数字变化，玩家看不到） */
+  function applyTheme(th){
+    if (!th || !th.colors) return;
+    var c = th.colors;
+    try {
+      var root = document.documentElement;
+      if (c.bg)     root.style.setProperty('--mt-bg', c.bg);
+      if (c.board)  root.style.setProperty('--mt-board', c.board);
+      if (c.cell)   root.style.setProperty('--mt-cell', c.cell);
+      if (c.panel)  root.style.setProperty('--mt-panel', c.panel);
+      if (c.accent) root.style.setProperty('--mt-accent', c.accent);
+      if (c.bg)     document.body.style.background = c.bg;
+      if (c.board){ var b = $('board'); if (b) b.style.background = c.board; }
+      // 方块配色：优先用主题给的 gems，否则退回原色板
+      if (c.gems && c.gems.length){
+        for (var i = 0; i < COLORS.length && i < c.gems.length; i++) COLORS[i] = c.gems[i];
+      }
+      render();
+    } catch(e){}
+  }
+
+  function openCodex(){    var wrap = $('codexGrid');
     wrap.innerHTML = '';
     for (var lv = 1; lv <= GEMS.length; lv++){
       var g = gemOf(lv);
@@ -1023,22 +1678,47 @@
     var L = level();
     if (L.moves > 0 && movesUsed >= L.moves) return lose('步数用完了');
     if (goalMet()) return win();
+    /* 危险度不足时给一句提示（原来只有这一句 —— 静悄悄的一条文字，
+       真正的压迫感来自 applyDanger() 的呼吸红晕与心跳音）。 */
     if (Logic.maxHeight(grid) >= Logic.ROWS-2) say('小心 · 快堆到顶了');
+    heartLoop();          // 危险刚出现/刚解除都在这里重新定周期
+  }
+
+  /* 一局结束的统一入口：把结算全部委托给 meta.applyRun()。
+     它内部一次做完：星尘结算 + 统计 + 每日进度 + 发奖 + 落盘。
+     早期版本在这里手写 streak/dust/unlocked 再 save()，会与 meta 的存档互相覆盖。 */
+  function settleRun(won){
+    if (!meta) return null;
+    try {
+      return meta.applyRun({
+        score: score,
+        maxLevel: Logic.maxLevel(grid),
+        chains: chains,
+        combo: maxCombo,
+        won: won
+      });
+    } catch (e) {
+      if (window.console && console.error) console.error('applyRun 失败：', e);
+      return null;
+    }
   }
 
   function win(){
     ended = true;
-    if (score > bestScore) bestScore = score;
-    var gained = Math.max(5, Math.round(score/80));
-    var today = dayKey(0), bonus='';
-    if (lastDay !== today){
-      if (lastDay === dayKey(-1)){ streak++; bonus='<br>连续第 <b>'+streak+'</b> 天，星尘 +'+(streak*2); gained += streak*2; }
-      else { streak=1; bonus='<br>新的一天，连击开始'; }
-      lastDay = today;
+    var res = settleRun(true);
+    syncFromMeta();                      // 结算后同步派生视图（含 unlocked）
+    // 通关也要解锁下一关（meta 不管关卡解锁，那是本文件的职责）
+    if (levelIdx + 1 > unlocked) {
+      unlocked = Math.min(levelIdx + 1, Logic.LEVELS.length - 1);
+      if (meta) { try { meta.setUnlocked(unlocked); } catch(e){} }
+      syncFromMeta();
     }
-    dust += gained;
-    if (levelIdx + 1 > unlocked) unlocked = Math.min(levelIdx+1, Logic.LEVELS.length-1);
-    save();
+    var gained = res ? res.dustGained : 0;
+    var bonus = '';
+    if (res && res.dustFromStreak) bonus += '<br>连续打卡奖励 +' + res.dustFromStreak;
+    if (res && res.dustFromDaily)  bonus += '<br>每日挑战奖励 +' + res.dustFromDaily;
+    if (res && res.dailyCleared)   bonus += '<br>🎯 <b>今日挑战全部完成！</b>';
+
     $('overTitle').textContent = '过关！'; $('overTitle').className = 'win';
     $('tileShow').textContent = Logic.maxLevel(grid);
     $('tileShow').style.background = COLORS[(Logic.maxLevel(grid)-1) % COLORS.length];
@@ -1052,8 +1732,8 @@
 
   function lose(why){
     ended = true;
-    if (score > bestScore) bestScore = score;
-    save();
+    settleRun(false);
+    syncFromMeta();
     $('overTitle').textContent = '没成功 · ' + why; $('overTitle').className = 'lose';
     $('tileShow').textContent = Logic.maxLevel(grid);
     $('tileShow').style.background = COLORS[(Logic.maxLevel(grid)-1) % COLORS.length];
@@ -1078,13 +1758,20 @@
     grid = Logic.empty();
     Logic.placeStones(grid, L.stones || 0, Logic.hashStr('stone-lv' + levelIdx));
     score = 0; movesUsed = 0; chains = 0; combo = 0; maxCombo = 0;
+    /* 分数滚动器也要归零 —— 否则重开时数字会从上一局的分数"滚回去"。
+       同时取消在飞的 rAF，避免两局的两个滚动器互相抢写 #score。 */
+    if (scoreRollId){ cancelAnimationFrame(scoreRollId); scoreRollId = 0; }
+    scoreView = 0; scoreFrom = 0; scoreTo = 0;
+    scoreEl.dataset.bumpTarget = ''; paintScore();
+    ($('clutchFx')||{}).className = '';
+    ($('clutchTxt')||{}).className = '';
     nextQ = [seq(), seq()];
     busy = false; ended = false;
     $('lvLabel').textContent = '第 ' + (levelIdx+1) + ' 关 / ' + Logic.LEVELS.length;
     $('over').classList.remove('show');
     $('levelPick').style.display = 'none';
     say(L.tip, true);
-    buildBoard(); positionDanger(); render();
+    buildBoard(); updateDanger(); render(); heartLoop();
   }
 
   function openPick(){
@@ -1124,13 +1811,31 @@
     if (head){ var i = Array.prototype.indexOf.call($('colHead').children, head); if (i >= 0) return i; }
     return -1;
   }
+  /* 落子预览：幽灵方块提示会落到第几格。
+     用现成的 #colHint，但几何从「整列高亮」改成「对齐该列的落点格」——
+     原版只高亮整列，玩家仍然不知道会落在第几行（正是用户说的"看不见落点"）。
+     松手/移出 → opacity 归 0。 */
+  function landingRow(col){
+    if (armed || col < 0) return -1;
+    var h = Logic.height(grid, col);
+    if (h >= Logic.ROWS) return -1;       // 这列满了，没有落点
+    return Logic.ROWS - 1 - h;
+  }
   function showHint(col){
     var h=$('colHint'); if (!h) return;
-    if (col < 0 || armed){ h.style.opacity = 0; return; }
-    var ref = boardEl.querySelector('.cell[data-c="'+col+'"][data-r="0"]');
-    if (!ref) return;
+    var row = landingRow(col);
+    if (row < 0){ h.style.opacity = 0; h.dataset.row = '-1'; h.textContent=''; return; }
+    var ref = boardEl.querySelector('.cell[data-c="'+col+'"][data-r="'+row+'"]');
+    if (!ref) { h.style.opacity = 0; return; }
     var br=boardEl.getBoundingClientRect(), rr=ref.getBoundingClientRect();
-    h.style.left=(rr.left-br.left)+'px'; h.style.width=rr.width+'px'; h.style.opacity=1;
+    h.style.left=(rr.left-br.left)+'px';
+    h.style.top=(rr.top-br.top)+'px';
+    h.style.width=rr.width+'px';
+    h.style.height=rr.height+'px';
+    h.style.opacity=1;
+    h.dataset.col = String(col);
+    h.dataset.row = String(row);          // 闸门据此核对"预览几何 = 该列落点格"
+    h.textContent = String(row + 1);      // 第几格（1-based，给玩家看）
   }
   var downX=0, downY=0, moved=false;
   function onDown(e){
@@ -1169,6 +1874,10 @@
     render();
   });
   $('toolRefresh').addEventListener('click', useRefresh);
+  $('btnDaily').addEventListener('click', openDaily);
+  $('btnShop').addEventListener('click', openShop);
+  $('btnCloseDaily').addEventListener('click', function(){ $('dailyPanel').classList.remove('show'); });
+  $('btnCloseShop').addEventListener('click', function(){ $('shopPanel').classList.remove('show'); });
   $('btnCodex').addEventListener('click', openCodex);
   $('btnCloseCodex').addEventListener('click', function(){ $('codex').classList.remove('show'); });
   $('btnRetry').addEventListener('click', function(){ startLevel(levelIdx); });
@@ -1178,13 +1887,115 @@
     if (ended && goalMet()) startLevel(Math.min(levelIdx+1, Logic.LEVELS.length-1));
     else startLevel(levelIdx);
   });
-  window.addEventListener('resize', positionDanger);
+  window.addEventListener('resize', updateDanger);
   /* 图到齐后重绘一次，把 emoji 兜底换成真正的宝石图 */
   onGemReady = function(){ if (!busy) render(); };
 
   load();
+  /* 启动时应用已选主题 —— 否则玩家上次买的主题重开就"看不见了" */
+  if (meta){
+    META_OK = true;
+    try { applyTheme(meta.getTheme()); } catch(e){}
+  }
   window.__logic = Logic;
   window.__startLevel = startLevel;
+  /* 暴露元游戏层，供验收闸门与人工核对读取真实状态 */
+  window.__meta = meta;
+  window.__openDaily = openDaily;
+  window.__openShop = openShop;
+  window.__doBuyTheme = doBuyTheme;      // 供端到端验收走真实购买路径
+  window.__doSelectTheme = doSelectTheme;
+  /* ---------------------------------------------------------------------
+     对外测试面（给 smoke-test / run-diag / 闸门用）。
+     上一轮的教训：光有"我加了 X"的说法不算证据 —— 必须能从外部读到数字。
+     这里把分级/心跳/绝境逢生的**纯函数**也导出去，便于 Node 里直接单测。
+     --------------------------------------------------------------------- */
+  window.__test = { round: 3 };          // 闸门据此启用本轮 [8]..[13] 新断言
+  window.__gate = {                      // 与 t3 闸门约定的名字，两者都设，避免口径漂移
+    round: 3,
+    snapshot: function(){
+      return { grid: grid.slice(), score: score, next: nextQ.slice() };
+    },
+    lastMerge: function(){ return feelDbg.lastMerge; },
+    /* 受控局面：闸门直接摆 3 连块 vs 7 连块做确定性对比。
+       返回 true 表示已装入并同步渲染。 */
+    setSnapshot: function(s){
+      if (!s || !s.grid || s.grid.length !== grid.length) return false;
+      for (var i = 0; i < s.grid.length; i++) grid[i] = s.grid[i];
+      if (typeof s.score === 'number'){ score = s.score; scoreView = s.score; scoreTo = s.score; paintScore(); }
+      if (s.next && s.next.length){ nextQ = s.next.slice(); }
+      render(); updateDanger();
+      return true;
+    },
+    /* 直接驱动一次落子，省得闸门自己模拟触摸（触摸路径另有 [4] 覆盖） */
+    tap: function(col){ tapColumn(col); return true; },
+    isBusy: function(){ return !!busy; },
+    isEnded: function(){ return !!ended; }
+  };
+  window.__feel = {
+    dbg: function(){ return JSON.parse(JSON.stringify(feelDbg)); },
+    intensityFor: intensityFor,
+    tierFor: tierFor,
+    heartParams: heartParams,
+    isClutch: isClutch,
+    isDeepClutch: isDeepClutch,
+    landingRow: landingRow,
+    maxHeight: function(){ return Logic.maxHeight(grid); },
+    /* A/B 对照开关：把 render() 的重建判据退回**修复前**的语义
+       （只比等级，不看是否已挂上图）。仅供量具证明"缺陷真实存在、且被正确修复"——
+       同一个文件里既能复现旧行为、又能验证新行为，比对比两个不同文件更有说服力
+       （两个文件之间总还有别的差异）。返回 true 并立刻重绘。 */
+    setLegacyRender: function(on){ LEGACY_RENDER = !!on; render(); return LEGACY_RENDER; },
+    isLegacyRender: function(){ return LEGACY_RENDER; },
+    reset: function(){ feelDbg.burstCalls = 0; feelDbg.burstParticles = 0;
+      feelDbg.flyCount = 0; feelDbg.clutchCount = 0; feelDbg.lastMerge = null; return true; },
+    /* 危险/预览的当前可观测状态（闸门与人工排查共用） */
+    dangerState: function(){
+      var d = $('danger'), v = $('vignette');
+      if (!d) return null;
+      var cs = getComputedStyle(d), vs = v ? getComputedStyle(v) : null;
+      return { level: d.dataset.level, height: Number(d.dataset.height || -1),
+               className: d.className, opacity: cs.opacity,
+               animationDuration: cs.animationDuration, animationName: cs.animationName,
+               boxShadow: cs.boxShadow, transform: cs.transform,
+               vignetteClass: v ? v.className : null,
+               vignetteOpacity: vs ? vs.opacity : null,
+               vignetteDuration: vs ? vs.animationDuration : null,
+               vignetteDeep: v ? getComputedStyle(v).getPropertyValue('--deep') : null,
+               maxHeight: Logic.maxHeight(grid) };
+    },
+    hintState: function(){
+      var h = $('colHint'); if (!h) return null;
+      var cs = getComputedStyle(h), br = boardEl.getBoundingClientRect();
+      var r = h.getBoundingClientRect();
+      return { opacity: cs.opacity, col: h.dataset.col, row: h.dataset.row,
+               text: h.textContent,
+               rect: { l: Math.round(r.left-br.left), t: Math.round(r.top-br.top),
+                       w: Math.round(r.width), h: Math.round(r.height) },
+               visible: r.width > 0 && r.height > 0 && Number(cs.opacity) > 0.1 };
+    },
+    clutchState: function(){
+      var f = $('clutchFx'); if (!f) return null;
+      var r = f.getBoundingClientRect(), cs = getComputedStyle(f);
+      return { className: f.className, animating: f.classList.contains('show'),
+               w: Math.round(r.width), h: Math.round(r.height), opacity: cs.opacity,
+               count: feelDbg.clutchCount };
+    },
+    scoreState: function(){ return { target: score, view: scoreView, text: scoreEl.textContent }; },
+    emojiResidue: function(){
+      /* 棋盘上"图已就绪却仍显示 emoji"的格子数。
+         图没就绪时用 emoji 是**设计**的兜底，不算残留 —— 所以只统计 ok 的等级。 */
+      var bad = [], blocks = boardEl.querySelectorAll('.blk');
+      for (var i = 0; i < blocks.length; i++){
+        var b = blocks[i], lv = Number(b.dataset.lv);
+        if (!Logic.isNormal(lv)) continue;
+        if (GEM_IMG_STATE[lv] !== 'ok') continue;
+        if (!b.querySelector('img')) bad.push({ lv: lv, text: b.textContent });
+      }
+      return { residue: bad.length, detail: bad.slice(0, 5) };
+    },
+    imgStates: function(){ return JSON.parse(JSON.stringify(GEM_IMG_STATE)); }
+  };
   startLevel(Math.min(unlocked, Logic.LEVELS.length-1));
 })();
 </script>
