@@ -128,6 +128,36 @@
     flex-direction:column;padding:26px 20px;overflow-y:auto}
   #levelPick h2{margin:0 0 14px;font-size:18px;text-align:center}
   #grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;max-width:360px;margin:0 auto;width:100%}
+  /* 新发现弹窗 */
+  #discover{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+    z-index:92;pointer-events:none;background:rgba(18,17,30,.55)}
+  #discover.show{display:flex;animation:dIn .3s ease}
+  @keyframes dIn{from{opacity:0}to{opacity:1}}
+  .dcard{background:#1E1C2E;border-radius:22px;padding:20px 26px 18px;text-align:center;
+    box-shadow:0 0 0 2px #FFD479,0 14px 50px rgba(0,0,0,.6);animation:dPop .45s cubic-bezier(.2,1.5,.4,1)}
+  @keyframes dPop{0%{transform:scale(.5) rotate(-6deg)}60%{transform:scale(1.06) rotate(1deg)}100%{transform:scale(1)}}
+  .dtag{font-size:12px;font-weight:900;color:#FFD479;letter-spacing:.2em;margin-bottom:8px}
+  .dimg{width:104px;height:104px;margin:0 auto 10px;border-radius:18px;display:flex;
+    align-items:center;justify-content:center;overflow:hidden}
+  .dname{font-size:24px;font-weight:900;color:#EDEAF5}
+  .drare{font-size:11.5px;color:#8E88A8;margin-top:3px;letter-spacing:.06em}
+  .dhint{font-size:12px;color:#6FD8C8;margin-top:11px;max-width:180px;line-height:1.5}
+  /* 图鉴 */
+  #codex{position:fixed;inset:0;background:rgba(18,17,30,.98);display:none;z-index:96;
+    flex-direction:column;padding:24px 18px;overflow-y:auto}
+  #codex.show{display:flex}
+  .chead{text-align:center;margin-bottom:16px}
+  .chead h2{margin:0;font-size:19px;font-weight:900}
+  .chead .sub{font-size:12px;color:#8E88A8;margin-top:4px}
+  #codexGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:380px;
+    margin:0 auto;width:100%}
+  .ccell{background:#1B1930;border-radius:14px;padding:10px 6px 8px;text-align:center;
+    box-shadow:inset 0 0 0 1px #2A2740}
+  .ccell.locked{opacity:.55}
+  .cbox{width:100%;aspect-ratio:1;border-radius:10px;display:flex;align-items:center;
+    justify-content:center;margin-bottom:6px}
+  .cname{font-size:12px;font-weight:800;color:#EDEAF5}
+  .crare{font-size:9.5px;color:#8E88A8;margin-top:2px}
 </style>
 </head>
 <body>
@@ -166,10 +196,11 @@
     </div>
     <div id="msg" class="dim">点一列放下方块 · 同级相邻自动合成</div>
     <div id="bar">
-      <button class="ghost" id="btnRetry">重开本关</button>
+      <button class="ghost" id="btnCodex">图鉴</button>
+      <button class="ghost" id="btnRetry">重开</button>
       <button class="ghost" id="btnLevels">选关</button>
     </div>
-    <div class="note">原型 · 关卡由 AI 逐关实跑校准 · 音效为代码合成</div>
+    <div class="note">原型 · 关卡由 AI 逐关实跑校准 · 宝石资产由 AI 生成 + 自动抠图</div>
   </div>
 </div>
 
@@ -187,6 +218,17 @@
   <h2>选择关卡</h2>
   <div id="grid"></div>
   <button id="btnClosePick" style="max-width:220px;margin:18px auto 0">返回</button>
+</div>
+
+<div id="discover"></div>
+
+<div id="codex">
+  <div class="chead">
+    <h2>宝石图鉴</h2>
+    <div class="sub">已发现 <span id="codexCount">0 / 10</span> · 每次合成升级都会解锁新的</div>
+  </div>
+  <div id="codexGrid"></div>
+  <button id="btnCloseCodex" style="max-width:220px;width:100%;margin:20px auto 0">返回</button>
 </div>
 
 <script>
@@ -437,8 +479,51 @@
   /* =====================================================================
      表现层
      ===================================================================== */
-  var COLORS = ['#7FD87F','#6FD8C8','#8B7BF7','#FFD479','#FF9BD0','#FF6B6B','#FFA45C','#E8E4FF','#9BE8FF','#FFC9E8'];
+  var COLORS = ['#B9B2C8','#B07BE8','#7FD8E8','#4FC98A','#E8506B','#F0B429','#3A6BE0','#DCE8F5','#E857B8','#FFD479'];
   var PENTA = [1, 1.125, 1.25, 1.5, 1.6667];
+
+  /*
+    宝石图鉴 —— 这是"玩下去的理由"的核心载体。
+
+    诊断：原版方块只是数字 1~9，玩家视野里唯一的期待是"数字变大"。
+    合成大西瓜让人停不下来，是因为玩家**想看那个西瓜长什么样**；2048 同理。
+    没有身份的方块 → 没有好奇 → 没有图鉴 → 没有积累 → 没有可晒的东西。
+    一个缺口同时卡死了收集、社交、回访三个留存引擎。
+
+    文件名带英文描述（gem-01-quartz.png），**不能**用
+    'gem-' + padStart(2,'0') + '.png' 这种拼接去猜 —— 实测这会让
+    10 张图全部 404，而页面毫无报错、只静默退回 emoji 兜底。
+    所以这里显式列出文件名，与定义一一对应。
+  */
+  var GEMS = [
+    { n:'石英',     f:'gem-01-quartz',        e:'🪨', r:'普通' },
+    { n:'紫水晶',   f:'gem-02-amethyst',      e:'🔮', r:'普通' },
+    { n:'海蓝宝石', f:'gem-03-aquamarine',    e:'💧', r:'少见' },
+    { n:'祖母绿',   f:'gem-04-emerald',       e:'🟩', r:'少见' },
+    { n:'红宝石',   f:'gem-05-ruby',          e:'🔺', r:'稀有' },
+    { n:'黄玉',     f:'gem-06-topaz',         e:'🟡', r:'稀有' },
+    { n:'星光蓝宝', f:'gem-07-sapphire',      e:'⭐', r:'史诗' },
+    { n:'钻石',     f:'gem-08-diamond',       e:'💠', r:'史诗' },
+    { n:'龙晶',     f:'gem-09-dragoncrystal', e:'🔥', r:'传说' },
+    { n:'世界核心', f:'gem-10-worldcore',     e:'🌍', r:'传说' }
+  ];
+  var GEM_IMG = {};        // level -> Image（已加载才用）
+  var GEM_IMG_STATE = {};  // level -> 'loading' | 'ok' | 'fail'
+  function gemOf(lv){ return GEMS[Math.min(Math.max(lv,1), GEMS.length) - 1]; }
+  /* 图片按需加载：先用 emoji + 颜色渲染，图到了自动替换 —— 首屏不卡在网络上。
+     图挂了也不影响玩法，只是退回 emoji。 */
+  function ensureGemImg(lv){
+    if (lv < 1 || lv > GEMS.length) return;
+    if (GEM_IMG_STATE[lv]) return;
+    GEM_IMG_STATE[lv] = 'loading';
+    var im = new Image();
+    im.onload = function(){ GEM_IMG_STATE[lv] = 'ok'; GEM_IMG[lv] = im; if (typeof onGemReady === 'function') onGemReady(lv); };
+    im.onerror = function(){ GEM_IMG_STATE[lv] = 'fail'; };
+    im.src = 'gems/' + gemOf(lv).f + '.png';
+  }
+  var onGemReady = null;
+  /* 图鉴：已发现的最高等级（首次合出即记录） */
+  var codexSeen = {};
 
   var grid, score = 0, movesUsed = 0, chains = 0, combo = 0, maxCombo = 0;
   var levelIdx = 0, unlocked = 0, bestScore = 0, dust = 0, streak = 0, lastDay = '';
@@ -452,14 +537,15 @@
 
   function load(){
     try {
-      var s = JSON.parse(localStorage.getItem('merge_tower_v4') || '{}');
+      var s = JSON.parse(localStorage.getItem('merge_tower_v5') || '{}');
       unlocked = s.unlocked || 0; bestScore = s.bestScore || 0;
       dust = s.dust || 0; streak = s.streak || 0; lastDay = s.lastDay || '';
-    } catch(e){ unlocked = 0; bestScore = 0; dust = 0; streak = 0; lastDay = ''; }
+      codexSeen = s.codexSeen || {};
+    } catch(e){ unlocked = 0; bestScore = 0; dust = 0; streak = 0; lastDay = ''; codexSeen = {}; }
     if (unlocked >= Logic.LEVELS.length) unlocked = Logic.LEVELS.length - 1;
   }
   function save(){
-    try { localStorage.setItem('merge_tower_v4', JSON.stringify({ unlocked:unlocked, bestScore:bestScore, dust:dust, streak:streak, lastDay:lastDay })); } catch(e){}
+    try { localStorage.setItem('merge_tower_v5', JSON.stringify({ unlocked:unlocked, bestScore:bestScore, dust:dust, streak:streak, lastDay:lastDay, codexSeen:codexSeen })); } catch(e){}
   }
   function dayKey(off){
     var d = new Date(); if (off) d.setDate(d.getDate()+off);
@@ -586,7 +672,7 @@
     if (v === Logic.BOMB) return '💣';
     if (v === Logic.STONE) return '🧱';
     if (v === Logic.RAINBOW) return '🌈';
-    return String(v);
+    return gemOf(v).e;
   }
   function blockBg(v){
     if (v === Logic.BOMB || v === Logic.STONE || v === Logic.RAINBOW) return '';
@@ -596,8 +682,26 @@
     if (v === Logic.BOMB) return 20;
     if (v === Logic.STONE) return 18;
     if (v === Logic.RAINBOW) return 20;
-    return v >= 100 ? 14 : (v >= 10 ? 18 : 23);
+    return 22;
   }
+  /* 把宝石图铺满格子。图未就绪时保留 emoji 兜底，不阻塞玩法。 */
+  function fillGem(el, lv){
+    el.textContent = '';
+    el.style.background = blockBg(lv);
+    if (GEM_IMG_STATE[lv] === 'ok' && GEM_IMG[lv]){
+      var im = GEM_IMG[lv].cloneNode();
+      im.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;pointer-events:none';
+      el.textContent = '';
+      el.appendChild(im);
+      el.style.background = '';   // 有图就不需要底色
+      el.style.fontSize = '';
+    } else {
+      el.textContent = gemOf(lv).e;
+      el.style.fontSize = fontOf(lv) + 'px';
+      ensureGemImg(lv);
+    }
+  }
+  function fontOf(v){ return 22; }
 
   function buildBoard(){
     boardEl.innerHTML = '<div id="danger"></div><div id="colHint"></div><div id="blast"></div>';
@@ -639,9 +743,9 @@
         var b=document.createElement('div');
         b.className='blk' + blockClass(v);
         b.dataset.lv=v;
-        b.style.background=blockBg(v); b.style.fontSize=blockFont(v)+'px';
-        b.textContent = blockText(v);
         var id=Logic.idx(c,r);
+        if (Logic.isNormal(v)) fillGem(b, v);
+        else { b.style.background=blockBg(v); b.style.fontSize=blockFont(v)+'px'; b.textContent = blockText(v); }
         if (popSet[id]) b.className += ' pop';
         else if (boomSet[id]) b.className += ' boom';
         else if (smashSet[id]) b.className += ' smash';
@@ -655,7 +759,8 @@
     }
     var sc=$('score');
     if (sc.textContent !== String(score)){ sc.textContent=score; sc.classList.remove('bump'); void sc.offsetWidth; sc.classList.add('bump'); }
-    $('best').textContent = Logic.maxLevel(grid) || 1;
+    var mxl = Logic.maxLevel(grid) || 1;
+    $('best').textContent = mxl >= 1 ? gemName(mxl) : '—';
     $('chainN').textContent = chains;
 
     var L=level(), mv=$('moves');
@@ -705,10 +810,17 @@
   function updateNext(){
     [[$('n1'), nextQ[0]||1, 0], [$('n2'), nextQ[1]||1, -4]].forEach(function(t){
       var el=t[0], v=t[1], d=t[2];
-      el.textContent = blockText(v);
       el.className = 'nbox' + (d===0?'':' sm') + blockClass(v);
-      el.style.background = blockBg(v);
-      el.style.fontSize = (blockFont(v)+d)+'px';
+      if (Logic.isNormal(v)){
+        el.textContent = gemOf(v).e;
+        el.style.background = blockBg(v);
+        el.style.fontSize = (blockFont(v)+d)+'px';
+        ensureGemImg(v);
+      } else {
+        el.textContent = blockText(v);
+        el.style.background = blockBg(v);
+        el.style.fontSize = (blockFont(v)+d)+'px';
+      }
     });
   }
   function say(t, dim){ var m=$('msg'); m.textContent=t; m.className=dim?'dim':''; }
@@ -750,6 +862,7 @@
       var events = Logic.resolve(grid, bonusCol, mult());
       if (events.length){
         var popCells=[], bornCells=[], total=0, lastRect=null, anyBonus=false;
+        var newlyFound = null;
         for (var i=0;i<events.length;i++){
           var e = events[i];
           popCells = popCells.concat(e.cells);
@@ -758,6 +871,9 @@
           if (e.bonus) anyBonus = true;
           burst(cellRect(e.col, e.row), COLORS[(e.to-1)%COLORS.length], e.to>=6?12:(e.to>=4?9:6));
           if (i === events.length-1) lastRect = cellRect(e.col, e.row);
+          // 图鉴：首次合出这个等级就记下来，并弹出「新发现」
+          if (!codexSeen[e.to]){ codexSeen[e.to] = 1; newlyFound = e.to; save(); }
+          ensureGemImg(e.to);
         }
         score += total;
         if (events.length > 1) chains++;
@@ -766,21 +882,98 @@
         var topLv = events[events.length-1].to;
         flyScore(lastRect, total, topLv>=5, anyBonus);
         playMerge(topLv, events.length>1, anyBonus, combo);
-        if (combo >= 4) { toast('连击 ×' + mult().toFixed(1) + '！', '#FFD479'); shake(); }
+        if (newlyFound && newlyFound >= 3) {
+          // 新宝石比连击提示更重要 —— 这正是"想看下一个长什么样"的驱动力
+          showDiscovery(newlyFound);
+        }
+        else if (combo >= 4) { toast('连击 ×' + mult().toFixed(1) + '！', '#FFD479'); shake(); }
         else if (topLv >= 6) { shake(); toast('漂亮', '#6FD8C8'); }
         else if (anyBonus) { toast('双倍 ×2', '#FFD479'); }
-        say('合成到 ' + topLv + ' 级  +' + total + (anyBonus?'（双倍）':'') + (combo>=2?'（连击 ×'+mult().toFixed(1)+'）':''));
+        say('合成出 ' + gemName(topLv) + '  +' + total + (anyBonus?'（双倍）':'') + (combo>=2?'（连击 ×'+mult().toFixed(1)+'）':''));
         render({ pop: popCells, born: bornCells });
         setTimeout(function(){ render(); finishTurn(); }, 270);
       } else {
         combo = 0;
         say(val === Logic.BOMB ? '炸弹没有引发合成 · 连击中断'
             : val === Logic.RAINBOW ? '彩虹落下了 · 和旁边的方块相邻就会合成'
-            : ('放下 ' + val + ' 级方块 · 没有合成，连击中断'), true);
+            : ('放下 ' + gemName(val) + ' · 没有合成，连击中断'), true);
         render();
         finishTurn();
       }
     }
+  }
+
+  /* 「新发现」弹窗 —— 玩家玩下去的核心动力之一：想知道下一个长什么样 */
+  function showDiscovery(lv){
+    var d = $('discover');
+    var g = gemOf(lv);
+    d.innerHTML = '';
+    var card = document.createElement('div');
+    card.className = 'dcard';
+    var imgWrap = document.createElement('div');
+    imgWrap.className = 'dimg';
+    if (GEM_IMG_STATE[lv] === 'ok' && GEM_IMG[lv]){
+      var im = GEM_IMG[lv].cloneNode();
+      im.style.cssText = 'width:100%;height:100%;object-fit:contain';
+      imgWrap.appendChild(im);
+    } else {
+      imgWrap.textContent = g.e;
+      imgWrap.style.fontSize = '64px';
+      imgWrap.style.background = COLORS[(lv-1)%COLORS.length];
+    }
+    var t1 = document.createElement('div'); t1.className = 'dtag'; t1.textContent = '新发现';
+    var t2 = document.createElement('div'); t2.className = 'dname'; t2.textContent = g.n;
+    var t3 = document.createElement('div'); t3.className = 'drare'; t3.textContent = g.r + ' · ' + lv + ' 级';
+    var t4 = document.createElement('div'); t4.className = 'dhint';
+    var nx = lv + 1;
+    t4.textContent = (nx <= GEMS.length) ? ('再合一次，就能看到「' + gemOf(nx).n + '」') : '你已经合出了最高级的宝石';
+    card.appendChild(t1); card.appendChild(imgWrap); card.appendChild(t2); card.appendChild(t3); card.appendChild(t4);
+    d.appendChild(card);
+    d.classList.add('show');
+    playRainbow();
+    setTimeout(function(){ d.classList.remove('show'); }, 1700);
+  }
+
+  /* 图鉴页 */
+  function openCodex(){
+    var wrap = $('codexGrid');
+    wrap.innerHTML = '';
+    for (var lv = 1; lv <= GEMS.length; lv++){
+      var g = gemOf(lv);
+      var seen = !!codexSeen[lv];
+      var cell = document.createElement('div');
+      cell.className = 'ccell' + (seen ? '' : ' locked');
+      var box = document.createElement('div');
+      box.className = 'cbox';
+      if (seen){
+        if (GEM_IMG_STATE[lv] === 'ok' && GEM_IMG[lv]){
+          var im = GEM_IMG[lv].cloneNode();
+          im.style.cssText = 'width:100%;height:100%;object-fit:contain';
+          box.appendChild(im);
+        } else {
+          box.textContent = g.e;
+          box.style.fontSize = '34px';
+          box.style.background = COLORS[(lv-1)%COLORS.length];
+          ensureGemImg(lv);
+        }
+      } else {
+        box.textContent = '?';
+        box.style.color = '#4A4566';
+        box.style.fontSize = '30px';
+      }
+      var nm = document.createElement('div');
+      nm.className = 'cname';
+      nm.textContent = seen ? g.n : '未发现';
+      var rr = document.createElement('div');
+      rr.className = 'crare';
+      rr.textContent = seen ? g.r : (lv + ' 级');
+      cell.appendChild(box); cell.appendChild(nm); cell.appendChild(rr);
+      wrap.appendChild(cell);
+    }
+    var found = 0;
+    for (var k in codexSeen) if (codexSeen[k]) found++;
+    $('codexCount').textContent = found + ' / ' + GEMS.length;
+    $('codex').classList.add('show');
   }
 
   /* 锤子：敲掉点击的那一格 */
@@ -968,6 +1161,8 @@
     render();
   });
   $('toolRefresh').addEventListener('click', useRefresh);
+  $('btnCodex').addEventListener('click', openCodex);
+  $('btnCloseCodex').addEventListener('click', function(){ $('codex').classList.remove('show'); });
   $('btnRetry').addEventListener('click', function(){ startLevel(levelIdx); });
   $('btnLevels').addEventListener('click', openPick);
   $('btnClosePick').addEventListener('click', function(){ $('levelPick').style.display='none'; });
@@ -976,6 +1171,8 @@
     else startLevel(levelIdx);
   });
   window.addEventListener('resize', positionDanger);
+  /* 图到齐后重绘一次，把 emoji 兜底换成真正的宝石图 */
+  onGemReady = function(){ if (!busy) render(); };
 
   load();
   window.__logic = Logic;
