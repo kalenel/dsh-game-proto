@@ -159,6 +159,14 @@
   .tool .ico{font-size:19px;line-height:1.1}
   .tool .lbl{font-size:10px;color:#A9A3C0;margin-top:1px}
   .tool .n{font-size:12px;font-weight:900;color:#FFD479}
+  /* 石块计数器：明确不是按钮 —— 无指针、无按下缩放、无 .tool 的描边强调，
+     而是弱化的信息块（用户反馈"看不懂石头的作用"，一半原因在它伪装成按钮） */
+  .counter{flex:1;background:#1A1828;border-radius:12px;padding:9px 0;text-align:center;
+    box-shadow:inset 0 0 0 1px #2B2740;opacity:.92;cursor:default}
+  .counter .ico{font-size:19px;line-height:1.1;filter:grayscale(.25)}
+  .counter .lbl{font-size:10px;color:#8E88A8;margin-top:1px}
+  .counter .n{font-size:12px;font-weight:900;color:#C9C2E0}
+  .counter .hint{font-size:9px;color:#6B6588;margin-top:1px}
   #msg{font-size:12.5px;line-height:1.45;min-height:18px;color:#FFD479;text-align:center}
   #msg.dim{color:#8E88A8}
   #bar{display:flex;gap:8px;margin-top:5px}
@@ -239,6 +247,23 @@
     background:#FFD479;color:#141322}
   .srow button.owned{background:#2E6B4A;color:#DFF7E9}
   .srow button.locked{background:#242238;color:#6B6588;box-shadow:inset 0 0 0 1px #37335A}
+  /* 玩法说明 */
+  #helpPanel{position:fixed;inset:0;background:rgba(18,17,30,.985);display:none;z-index:98;
+    flex-direction:column;padding:22px 16px;overflow-y:auto}
+  #helpPanel.show{display:flex}
+  #helpBody{max-width:420px;margin:0 auto;width:100%;display:flex;flex-direction:column;gap:11px}
+  .hcard{background:#1B1930;border-radius:14px;padding:13px 15px;box-shadow:inset 0 0 0 1px #2A2740}
+  .hcard .ht{font-size:13.5px;font-weight:800;color:#FFD479;margin-bottom:6px;display:flex;
+    align-items:center;gap:7px}
+  .hcard .hb{font-size:12.5px;color:#C4BEDC;line-height:1.7}
+  .hcard .hb b{color:#EDEAF5}
+  .hcard .hb .k{display:inline-block;background:#2A2740;border-radius:5px;padding:0 5px;
+    font-weight:800;color:#EDEAF5;margin:0 2px}
+  .hdemo{display:flex;align-items:center;gap:9px;margin-top:8px;flex-wrap:wrap}
+  .hdemo .cell2{width:34px;height:34px;border-radius:8px;display:flex;align-items:center;
+    justify-content:center;font-size:16px;font-weight:900;color:rgba(18,17,30,.6)}
+  .hdemo .arrow{color:#8E88A8;font-size:15px}
+  .hdemo .note{font-size:11px;color:#8E88A8}
 </style>
 </head>
 <body>
@@ -271,12 +296,25 @@
 
   <div id="foot">
     <div id="tools">
-      <div class="tool" id="toolHammer"><div class="ico">🔨</div><div class="lbl">锤子 <span class="n" id="nHammer">0</span></div></div>
-      <div class="tool" id="toolRefresh"><div class="ico">🔄</div><div class="lbl">换一个 <span class="n" id="nRefresh">0</span></div></div>
-      <div class="tool dead" id="toolInfo"><div class="ico">🧱</div><div class="lbl">石块 <span class="n" id="nStone">0</span></div></div>
+      <div class="tool" id="toolHammer" role="button" tabindex="0" aria-label="锤子：敲掉任意一格">
+        <div class="ico">🔨</div><div class="lbl">锤子 <span class="n" id="nHammer">0</span></div>
+      </div>
+      <div class="tool" id="toolRefresh" role="button" tabindex="0" aria-label="换一个：丢掉当前方块换新的">
+        <div class="ico">🔄</div><div class="lbl">换一个 <span class="n" id="nRefresh">0</span></div>
+      </div>
+      <!-- 石块**不是按钮**，只是一个场上计数。用户反馈"看不懂这几个石头的作用"，
+           根因之一就是它长得和上面两个可点按钮一模一样。
+           现在改成明确的「计数/图例」样式（无 .tool 可点样式、无 hover、无按下反馈），
+           并在旁边直接给出它是什么。 -->
+      <div class="counter" id="toolInfo" aria-label="场上石块数量（不可点击，石块不能被合成）">
+        <div class="ico">🧱</div>
+        <div class="lbl">场上石块 <span class="n" id="nStone">0</span></div>
+        <div class="hint">不能合成</div>
+      </div>
     </div>
     <div id="msg" class="dim">点一列放下方块 · 同级相邻自动合成</div>
     <div id="bar">
+      <button class="ghost" id="btnHelp">玩法</button>
       <button class="ghost" id="btnDaily">挑战</button>
       <button class="ghost" id="btnShop">商店</button>
       <button class="ghost" id="btnCodex">图鉴</button>
@@ -307,6 +345,17 @@
 </div>
 
 <div id="discover"></div>
+
+<!-- 玩法说明：常驻可查（用户反馈"也没个解释"。
+     原先唯一的解释是关卡 tip，一次性、关掉就再也看不到） -->
+<div id="helpPanel">
+  <div class="chead">
+    <h2>怎么玩</h2>
+    <div class="sub">随时可查 · 看懂规则再玩更省心</div>
+  </div>
+  <div id="helpBody"></div>
+  <button id="btnCloseHelp" style="max-width:220px;width:100%;margin:18px auto 0">知道了</button>
+</div>
 
 <!-- 每日挑战：给玩家"今天该做什么"的目标 -->
 <div id="dailyPanel">
@@ -501,6 +550,19 @@
        放在底部只是浪费一格；垫高之后石块把这一列**切成两段** ——
        下方那截只能横向跟邻列合成，上方另起一组。
        这是"逼玩家重新规划"的空间约束，也是锤子的主要用途。 */
+    /* 关卡开始时预置石块。
+       石块**垫高放置**，把一列切成两段（下方那截只能横向跟邻列合成）。
+
+       ⚠️ 这里修过一个让玩家"看不懂"的真问题（用户报「没接触到怎么就消掉了」）：
+       原先垫底方块**一律写成 1 级**，于是：
+         · 横向：相邻列同为 1 级 → 左右成对
+         · 竖向：同一列叠 2 层同为 1 级 → 上下成对
+       开局棋盘上就已经存在"自己就会合"的组合。玩家往别处落一子，
+       resolve() 会把这些对子也合掉 → "我没碰它，它怎么没了"。
+       实测（用与游戏完全一致的调用签名）：**16 关里 9 关开局就有可合成组合**。
+
+       现在：垫底等级取自互不相同的池子，并且**逐格校验**（横向 + 竖向），
+       任何同级相邻都会被就地改掉，直到全盘干净。 */
     function placeStones(g, count, seed){
       if (count <= 0) return g;
       var rng = mulberry32(seed), cols = [], c;
@@ -509,12 +571,55 @@
         var j = Math.floor(rng() * (i+1)), t = cols[i]; cols[i] = cols[j]; cols[j] = t;
       }
       var n = Math.min(count, COLS);
+      var POOL = [1, 2, 3, 4, 5, 6, 7];
+      for (var i2 = POOL.length - 1; i2 > 0; i2--){
+        var j2 = Math.floor(rng() * (i2 + 1)), t2 = POOL[i2]; POOL[i2] = POOL[j2]; POOL[j2] = t2;
+      }
       for (var k = 0; k < n; k++){
         var cc = cols[k];
-        var base = 1 + Math.floor(rng() * 2);          // 垫 1~2 个方块
+        var base = 1 + Math.floor(rng() * 2);
         if (base + 2 > ROWS) continue;
-        for (var b = 0; b < base; b++) g[idx(cc, ROWS-1-b)] = 1;   // 垫底的都是 1 级
+        for (var b = 0; b < base; b++){
+          // 同一列上下两层也必须不同级（否则竖向就成对）
+          var lv = POOL[(k + b * 3) % POOL.length];
+          g[idx(cc, ROWS-1-b)] = lv;
+        }
         g[idx(cc, ROWS-1-base)] = STONE;
+      }
+      /* 逐格清理：任何同级相邻（横 or 竖）都改掉，直到全盘无对。
+         用"改动即重扫"的朴素循环 —— 棋盘只有 48 格，代价可忽略，
+         换来的是"开局绝不可能自己合"这个硬保证。 */
+      for (var guard = 0; guard < 200; guard++){
+        var changed = false;
+        for (var c2 = 0; c2 < COLS && !changed; c2++){
+          for (var r2 = 0; r2 < ROWS && !changed; r2++){
+            var p = idx(c2, r2), v = g[p];
+            if (!(v >= 1 && v <= 99)) continue;
+            var nb = [];
+            if (c2 > 0) nb.push(idx(c2-1, r2));
+            if (c2 < COLS-1) nb.push(idx(c2+1, r2));
+            if (r2 > 0) nb.push(idx(c2, r2-1));
+            if (r2 < ROWS-1) nb.push(idx(c2, r2+1));
+            for (var q = 0; q < nb.length; q++){
+              if (g[nb[q]] === v){
+                // 换成一个与所有邻居都不同的等级
+                var cand = 1;
+                for (var tryLv = 1; tryLv <= 9; tryLv++){
+                  var clash = false;
+                  var nb2 = nb.concat([p]);
+                  for (var w = 0; w < nb2.length; w++){
+                    if (nb2[w] !== p && g[nb2[w]] === tryLv) { clash = true; break; }
+                  }
+                  if (!clash){ cand = tryLv; break; }
+                }
+                g[p] = cand;
+                changed = true;
+                break;
+              }
+            }
+          }
+        }
+        if (!changed) break;
       }
       return g;
     }
@@ -1599,6 +1704,99 @@
     } catch(e){}
   }
 
+  /* =====================================================================
+     玩法说明（常驻可查）
+     =====================================================================
+     用户反馈：「我都没看懂这几个石头的作用！也没个解释」。
+     根因有两条：
+       ① 唯一的解释是关卡 tip —— 一次性、关掉就看不到（且只在特定关卡出现）
+       ② 「石块」那个位置长得和可点按钮一样，但它其实只是个计数器
+     所以这里给一份**随时可打开**的说明，并且用图例把每种块画出来。
+  ===================================================================== */
+  function openHelp(){
+    var body = $('helpBody');
+    if (!body) return;
+    function cellHtml(lv, label){
+      var bg, txt;
+      if (lv === Logic.BOMB){ bg = '#2A2740'; txt = '💣'; }
+      else if (lv === Logic.STONE){ bg = '#4A4566'; txt = '🧱'; }
+      else if (lv === Logic.RAINBOW){ bg = 'linear-gradient(135deg,#FF6B6B,#FFD479,#7FD87F,#6FD8C8,#8B7BF7)'; txt = '🌈'; }
+      else { bg = COLORS[(lv-1) % COLORS.length]; txt = String(lv); }
+      return '<div class="cell2" style="background:' + bg + '">' + txt + '</div>' +
+             (label ? '<span class="note">' + label + '</span>' : '');
+    }
+    body.innerHTML =
+      '<div class="hcard">' +
+        '<div class="ht">🎯 目标</div>' +
+        '<div class="hb">每关顶部写着要做的事，例如「合出一个 <b>5</b> 级」。' +
+        '做完就过关，进下一关。步数上限是 <b>∞</b> 时不限步；显示数字时要在用光前完成。</div>' +
+      '</div>' +
+
+      '<div class="hcard">' +
+        '<div class="ht">👆 基本操作</div>' +
+        '<div class="hb">点一列，方块会从上方落到底。' +
+        '<b>两个相同等级的方块挨在一起就会合成</b>，等级 +1。' +
+        '按住不放可以先看到它落在哪一格。</div>' +
+        '<div class="hdemo">' + cellHtml(3) + '<span class="arrow">+</span>' + cellHtml(3) +
+          '<span class="arrow">→</span>' + cellHtml(4) + '<span class="note">两个 3 级挨在一起 → 变成 4 级</span></div>' +
+      '</div>' +
+
+      '<div class="hcard">' +
+        '<div class="ht">🔗 连锁</div>' +
+        '<div class="hb">一次落子如果引发多次合成，就是<b>连锁</b>。' +
+        '连锁会拉高<b>连击倍率</b>（最高 ×3），分数翻倍。</div>' +
+      '</div>' +
+
+      '<div class="hcard">' +
+        '<div class="ht">💣 炸弹</div>' +
+        '<div class="hb">落到哪就炸掉周围 <b>3×3</b> 的范围（<b>连石块一起炸</b>）。' +
+        '适合清场救急，但会<b>打断连击</b>。</div>' +
+        '<div class="hdemo">' + cellHtml(Logic.BOMB, '炸掉周围 9 格，包括石块') + '</div>' +
+      '</div>' +
+
+      '<div class="hcard">' +
+        '<div class="ht">🌈 彩虹</div>' +
+        '<div class="hb"><b>万能块</b>：只要它旁边有<b>一个</b>普通方块，就能跟它合成，' +
+        '产出那个方块的等级 +1。所以放在高等级方块旁边最划算。</div>' +
+        '<div class="hdemo">' + cellHtml(6) + '<span class="arrow">+</span>' + cellHtml(Logic.RAINBOW) +
+          '<span class="arrow">→</span>' + cellHtml(7) + '<span class="note">彩虹挨着 6 级 → 直接出 7 级</span></div>' +
+      '</div>' +
+
+      '<div class="hcard">' +
+        '<div class="ht">🧱 石块（这就是你问的那个）</div>' +
+        '<div class="hb">石块<b>不能合成</b>，也<b>不能点</b>。它是关卡开局就摆好的障碍，' +
+        '把一列<b>切成两段</b>：下段只能跟邻列横向合成，上段另起一组。<br>' +
+        '清掉它只有两种办法：<b>炸弹</b>炸，或<b>锤子</b>敲。<br>' +
+        '<span style="color:#8E88A8">底部那个「场上石块 N」只是个计数器，不是按钮。</span></div>' +
+        '<div class="hdemo">' + cellHtml(Logic.STONE, '不可合成 · 只能被炸弹或锤子清除') + '</div>' +
+      '</div>' +
+
+      '<div class="hcard">' +
+        '<div class="ht">🔨 锤子</div>' +
+        '<div class="hb">点锤子（变成红色）再点棋盘上任意一格，把它敲掉 —— ' +
+        '<b>石块也能敲</b>。用一次算一步，且<b>会打断连击</b>。</div>' +
+      '</div>' +
+
+      '<div class="hcard">' +
+        '<div class="ht">🔄 换一个</div>' +
+        '<div class="hb">丢掉手里正要落的那个方块，换成下一个。' +
+        '遇到不想要的块时用，<b>会打断连击</b>。</div>' +
+      '</div>' +
+
+      '<div class="hcard">' +
+        '<div class="ht">💰 星尘与主题</div>' +
+        '<div class="hb">过关拿<b>星尘</b>，去「<b>商店</b>」买棋盘主题（买了自动换上）。' +
+        '「<b>挑战</b>」里每天有 3 个额外目标，做完再得一笔星尘。</div>' +
+      '</div>' +
+
+      '<div class="hcard">' +
+        '<div class="ht">📖 图鉴</div>' +
+        '<div class="hb">每合出一个<b>新等级</b>的宝石，图鉴就解锁一格。' +
+        '点底部「图鉴」看你收集到哪了。</div>' +
+      '</div>';
+    $('helpPanel').classList.add('show');
+  }
+
   function openCodex(){    var wrap = $('codexGrid');
     wrap.innerHTML = '';
     for (var lv = 1; lv <= GEMS.length; lv++){
@@ -1874,6 +2072,8 @@
     render();
   });
   $('toolRefresh').addEventListener('click', useRefresh);
+  $('btnHelp').addEventListener('click', openHelp);
+  $('btnCloseHelp').addEventListener('click', function(){ $('helpPanel').classList.remove('show'); });
   $('btnDaily').addEventListener('click', openDaily);
   $('btnShop').addEventListener('click', openShop);
   $('btnCloseDaily').addEventListener('click', function(){ $('dailyPanel').classList.remove('show'); });
@@ -1901,6 +2101,7 @@
   window.__startLevel = startLevel;
   /* 暴露元游戏层，供验收闸门与人工核对读取真实状态 */
   window.__meta = meta;
+  window.__openHelp = openHelp;
   window.__openDaily = openDaily;
   window.__openShop = openShop;
   window.__doBuyTheme = doBuyTheme;      // 供端到端验收走真实购买路径
