@@ -1,0 +1,694 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#12111E">
+<title>合成塔</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;
+    background:#12111E;color:#EDEAF5;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    user-select:none;-webkit-user-select:none;touch-action:manipulation}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column;
+    padding:calc(env(safe-area-inset-top) + 6px) 8px calc(env(safe-area-inset-bottom) + 6px)}
+  body.shake #app{animation:shake .3s cubic-bezier(.36,.07,.19,.97)}
+  @keyframes shake{
+    10%,90%{transform:translate3d(-2px,1px,0)}
+    20%,80%{transform:translate3d(4px,-2px,0)}
+    30%,50%,70%{transform:translate3d(-6px,2px,0)}
+    40%,60%{transform:translate3d(6px,-1px,0)}
+  }
+  header{flex:0 0 auto;padding:2px 4px 6px}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .title{font-size:14px;font-weight:800}
+  .sub{font-size:10px;color:#8E88A8;margin-top:2px}
+  .next{display:flex;align-items:center;gap:7px}
+  .next .k{font-size:10px;color:#8E88A8;letter-spacing:.06em}
+  .nbox{width:34px;height:34px;border-radius:9px;display:flex;align-items:center;
+    justify-content:center;font-size:16px;font-weight:900;color:rgba(18,17,30,.62);
+    box-shadow:inset 0 -2px 0 rgba(0,0,0,.18)}
+  .nbox.sm{width:26px;height:26px;font-size:13px;border-radius:7px;opacity:.75}
+  .stats{display:flex;gap:16px;margin-top:8px;align-items:flex-end}
+  .stat{display:flex;flex-direction:column;gap:0}
+  .stat .k{font-size:9.5px;letter-spacing:.08em;color:#8E88A8;text-transform:uppercase}
+  .stat .v{font-size:21px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1.1}
+  .stat .v.bump{animation:bump .3s ease}
+  @keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.3);color:#FFD479}100%{transform:scale(1)}}
+  #wrap{flex:1 1 auto;min-height:0;position:relative;display:flex;justify-content:center}
+  #board{width:100%;max-width:430px;display:grid;
+    grid-template-columns:repeat(6,1fr);grid-template-rows:repeat(10,1fr);
+    gap:4px;padding:5px;border-radius:14px;background:#191728;
+    box-shadow:inset 0 0 0 1px #262340;position:relative;overflow:hidden}
+  .cell{border-radius:9px;background:rgba(255,255,255,.035);position:relative}
+  .blk{position:absolute;inset:0;border-radius:9px;display:flex;align-items:center;
+    justify-content:center;font-weight:900;color:rgba(18,17,30,.6);
+    box-shadow:inset 0 -3px 0 rgba(0,0,0,.16),inset 0 2px 0 rgba(255,255,255,.22);
+    will-change:transform}
+  .blk.drop{animation:fallIn .17s ease-in}
+  @keyframes fallIn{from{transform:translateY(var(--fd,0px))}to{transform:translateY(0)}}
+  .blk.pop{animation:popM .26s ease forwards}
+  @keyframes popM{0%{transform:scale(1)}50%{transform:scale(1.34);filter:brightness(2)}100%{transform:scale(.1);opacity:0}}
+  .blk.born{animation:born .3s cubic-bezier(.2,1.6,.4,1)}
+  @keyframes born{0%{transform:scale(.3)}60%{transform:scale(1.22)}100%{transform:scale(1)}}
+  #danger{position:absolute;left:5px;right:5px;height:2px;background:linear-gradient(90deg,transparent,#FF6B6B,transparent);
+    opacity:0;transition:opacity .3s;pointer-events:none;z-index:5}
+  #danger.on{opacity:.85}
+  #colHint{position:absolute;top:5px;bottom:5px;width:calc(100%/6 - 3.4px);border-radius:10px;
+    background:rgba(255,212,121,.14);box-shadow:inset 0 0 0 2px rgba(255,212,121,.5);
+    opacity:0;transition:opacity .12s;pointer-events:none;z-index:4}
+  .p{position:fixed;width:8px;height:8px;border-radius:50%;pointer-events:none;z-index:60;will-change:transform,opacity}
+  .fly{position:fixed;font-weight:900;pointer-events:none;z-index:70;font-variant-numeric:tabular-nums;
+    will-change:transform,opacity;text-shadow:0 2px 10px rgba(0,0,0,.6)}
+  #toast{position:fixed;left:0;right:0;top:31%;text-align:center;pointer-events:none;z-index:80;
+    font-size:36px;font-weight:900;opacity:0;letter-spacing:.03em}
+  #toast.show{animation:toastIn .95s cubic-bezier(.2,.9,.3,1)}
+  @keyframes toastIn{
+    0%{opacity:0;transform:scale(.5) translateY(14px)}
+    22%{opacity:1;transform:scale(1.12)}
+    38%{transform:scale(1)}
+    100%{opacity:0;transform:scale(1.02) translateY(-22px)}
+  }
+  #foot{flex:0 0 auto;padding-top:6px}
+  #msg{font-size:12.5px;line-height:1.5;min-height:19px;color:#FFD479;text-align:center}
+  #msg.dim{color:#8E88A8}
+  #bar{display:flex;gap:8px;margin-top:6px}
+  button{flex:1;border:0;border-radius:12px;padding:13px 0;font-size:15px;font-weight:800;
+    font-family:inherit;color:#141322;background:#FFD479;cursor:pointer;transition:transform .08s}
+  button.ghost{background:#242238;color:#EDEAF5;box-shadow:inset 0 0 0 1px #37335A}
+  button:active{transform:scale(.97)}
+  #over{position:fixed;inset:0;background:rgba(18,17,30,.97);display:none;z-index:90;
+    flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:26px;text-align:center}
+  #over.show{display:flex}
+  #over h2{margin:0;font-size:17px;color:#8E88A8;font-weight:700}
+  #over .big{font-size:54px;font-weight:900;color:#FFD479;font-variant-numeric:tabular-nums;line-height:1}
+  #over .cmp{font-size:13px;color:#8E88A8;line-height:1.75}
+  #over .cmp b{color:#6FD8C8}
+  #tileShow{width:58px;height:58px;border-radius:14px;display:flex;align-items:center;justify-content:center;
+    font-size:26px;font-weight:900;color:rgba(18,17,30,.6);margin:2px 0}
+  #over button{max-width:230px;width:100%}
+  .note{font-size:10px;color:#565073;text-align:center;margin-top:5px;line-height:1.45}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="top">
+      <div>
+        <div class="title" id="modeTitle">合成塔 · 每日序列</div>
+        <div class="sub" id="modeSub">今天所有人拿到同一串方块</div>
+      </div>
+      <div class="next">
+        <span class="k">下一个</span>
+        <div class="nbox" id="n1">1</div>
+        <div class="nbox sm" id="n2">2</div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><span class="k">分数</span><span class="v" id="score">0</span></div>
+      <div class="stat"><span class="k">最高方块</span><span class="v" id="best">1</span></div>
+      <div class="stat"><span class="k">历史最高分</span><span class="v" id="bestScore">0</span></div>
+    </div>
+  </header>
+
+  <div id="wrap">
+    <div id="board"><div id="danger"></div><div id="colHint"></div></div>
+  </div>
+
+  <div id="foot">
+    <div id="msg" class="dim">点一列放下方块 · 同级相邻自动合成升级</div>
+    <div id="bar">
+      <button class="ghost" id="btnMode">换练习模式</button>
+      <button id="btnRestart">重开</button>
+    </div>
+    <div class="note">原型 · 判断「合成+堆高」这个核对不对 · 无音效素材（代码合成）</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="over">
+  <h2 id="overTitle">塔满了</h2>
+  <div class="big" id="finalScore">0</div>
+  <div class="cmp" id="cmp"></div>
+  <div id="tileShow">1</div>
+  <button id="btnAgain">再来一局</button>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* =====================================================================
+     纯逻辑层（零 DOM 依赖，可直接移植到 TypeScript 并单测）
+     ===================================================================== */
+  var Logic = (function(){
+    // 棋盘尺寸是**实测调出来的**，不是拍脑袋：
+    // 6×10 + 只出 1-4 级 时，200 局随机落子无一局满盘 → "堆到顶就输"这个
+    // 威胁实际不存在，险胜张力为空。改为 6×8 并提高高级方块占比后，
+    // 满盘率进入两位数，张力才真正成立。见 test-tower-logic.mjs。
+    var COLS = 6, ROWS = 8;
+    var idx = function(c, r){ return r * COLS + c; };
+
+    function empty(){ var g = new Array(COLS * ROWS); for (var i = 0; i < g.length; i++) g[i] = -1; return g; }
+    function clone(g){ return g.slice(); }
+
+    /* 每列向下压实。棋盘始终保持"每列自底向上连续"，所以这是幂等的。 */
+    function gravity(g){
+      for (var c = 0; c < COLS; c++){
+        // k 必须显式声明：整个脚本处于 'use strict'，未声明的赋值会抛
+        // ReferenceError，导致棋盘完全画不出来（已由离线测试捕获）。
+        var stack = [], r, k;
+        for (r = ROWS - 1; r >= 0; r--){ var v = g[idx(c, r)]; if (v >= 0) stack.push(v); }
+        for (r = ROWS - 1, k = 0; r >= 0; r--, k++) g[idx(c, r)] = k < stack.length ? stack[k] : -1;
+      }
+      return g;
+    }
+
+    function height(g, c){
+      var h = 0;
+      for (var r = 0; r < ROWS; r++) if (g[idx(c, r)] >= 0) h++;
+      return h;
+    }
+
+    /* 同等级四邻连通分组，只返回 size>=2 的 */
+    function groups(g){
+      var seen = new Array(g.length).fill(false), out = [];
+      for (var c = 0; c < COLS; c++){
+        for (var r = 0; r < ROWS; r++){
+          var s = idx(c, r);
+          if (g[s] < 0 || seen[s]) continue;
+          var lvl = g[s], stack = [s], grp = [];
+          seen[s] = true;
+          while (stack.length){
+            var p = stack.pop(); grp.push(p);
+            var pc = p % COLS, pr = (p / COLS) | 0;
+            var nb = [];
+            if (pr > 0) nb.push(idx(pc, pr - 1));
+            if (pr < ROWS - 1) nb.push(idx(pc, pr + 1));
+            if (pc > 0) nb.push(idx(pc - 1, pr));
+            if (pc < COLS - 1) nb.push(idx(pc + 1, pr));
+            for (var k = 0; k < nb.length; k++){
+              var n = nb[k];
+              if (!seen[n] && g[n] === lvl){ seen[n] = true; stack.push(n); }
+            }
+          }
+          if (grp.length >= 2) out.push(grp);
+        }
+      }
+      return out;
+    }
+
+    /* 选一组来合成：最大优先；并列时取"最低且最靠左"的那组（确定性） */
+    function pickGroup(g, gs){
+      var best = null, bestKey = null;
+      for (var i = 0; i < gs.length; i++){
+        var grp = gs[i], lowest = -1, lowc = 99;
+        for (var k = 0; k < grp.length; k++){
+          var p = grp[k], pc = p % COLS, pr = (p / COLS) | 0;
+          if (pr > lowest || (pr === lowest && pc < lowc)){ lowest = pr; lowc = pc; }
+        }
+        var key = [grp.length, -lowest, -lowc];
+        if (!bestKey || key[0] > bestKey[0] ||
+            (key[0] === bestKey[0] && key[1] > bestKey[1]) ||
+            (key[0] === bestKey[0] && key[1] === bestKey[1] && key[2] > bestKey[2])){
+          bestKey = key; best = { grp: grp, at: idx(lowc, lowest), lowc: lowc, lowest: lowest };
+        }
+      }
+      return best;
+    }
+
+    /* 合成一步。返回事件或 null（无可合成） */
+    function mergeStep(g){
+      gravity(g);
+      var gs = groups(g);
+      if (!gs.length) return null;
+      var pick = pickGroup(g, gs);
+      var lvl = g[pick.grp[0]];
+      var cells = pick.grp.slice();
+      for (var i = 0; i < cells.length; i++) g[cells[i]] = -1;
+      g[pick.at] = lvl + 1;
+      gravity(g);
+      return { level: lvl, to: lvl + 1, cells: cells, at: pick.at, col: pick.lowc, row: pick.lowest };
+    }
+
+    /* 反复合成直到稳定，收集全部事件（连锁） */
+    function resolve(g){
+      var ev = [], e, guard = 0;
+      while ((e = mergeStep(g)) && guard++ < 500) ev.push(e);
+      return ev;
+    }
+
+    /* 落子：放进指定列的最底部空位 */
+    function drop(g, col, level){
+      var h = height(g, col);
+      if (h >= ROWS) return null;
+      var at = idx(col, ROWS - 1 - h);
+      g[at] = level;
+      return { at: at, col: col, row: ROWS - 1 - h, level: level };
+    }
+
+    function isFull(g, c){ return height(g, c) >= ROWS; }
+    function anyFull(g){
+      for (var c = 0; c < COLS; c++) if (isFull(g, c)) return true;
+      return false;
+    }
+    function maxLevel(g){
+      var m = 0;
+      for (var i = 0; i < g.length; i++) if (g[i] > m) m = g[i];
+      return m;
+    }
+    function scoreFor(toLevel){ return 5 * Math.pow(2, toLevel); }
+
+    /* 确定性随机 */
+    function mulberry32(a){
+      return function(){
+        a |= 0; a = (a + 0x6D2B79F5) | 0;
+        var t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+    function hashStr(s){
+      var h = 2166136261;
+      for (var i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return h >>> 0;
+    }
+    /* 序列权重：低级多、高级少。故意不出现 5 级以上，逼玩家自己合出来。
+       权重同样是实测校准的：早期版本 (0.46/0.31/0.17/0.06) 太温和，
+       棋盘永远堆不满；提高 3/4 级占比后满盘率才进入两位数。 */
+    var W = [0.34, 0.30, 0.24, 0.12];
+    function makeSeq(seed){
+      var rng = mulberry32(seed);
+      return function(){
+        var x = rng(), acc = 0;
+        for (var i = 0; i < W.length; i++){ acc += W[i]; if (x < acc) return i + 1; }
+        return 1;
+      };
+    }
+
+    return {
+      COLS: COLS, ROWS: ROWS, idx: idx,
+      empty: empty, clone: clone, gravity: gravity, height: height,
+      groups: groups, mergeStep: mergeStep, resolve: resolve, drop: drop,
+      isFull: isFull, anyFull: anyFull, maxLevel: maxLevel, scoreFor: scoreFor,
+      makeSeq: makeSeq, hashStr: hashStr
+    };
+  })();
+
+  /* 自检：同种子必须完全一致（确定性），随机大量落子不得崩溃 */
+  function selfTest(){
+    var a = Logic.empty(), b = Logic.empty();
+    var s1 = Logic.makeSeq(Logic.hashStr('t')), s2 = Logic.makeSeq(Logic.hashStr('t'));
+    for (var i = 0; i < 40; i++){
+      var l1 = s1(), l2 = s2();
+      if (l1 !== l2) return 'FAIL: 序列不确定';
+      var c1 = i % Logic.COLS, c2 = (i * 3) % Logic.COLS;
+      if (!Logic.isFull(a, c1)){ Logic.drop(a, c1, l1); Logic.resolve(a); }
+      if (!Logic.isFull(b, c2)){ Logic.drop(b, c2, l2); Logic.resolve(b); }
+    }
+    if (Logic.hashStr('x') !== Logic.hashStr('x')) return 'FAIL: hash 不稳定';
+    return 'OK';
+  }
+
+  /* =====================================================================
+     表现层
+     ===================================================================== */
+  var COLORS = ['#7FD87F','#6FD8C8','#8B7BF7','#FFD479','#FF9BD0','#FF6B6B','#FFA45C','#E8E4FF','#9BE8FF','#FFC9E8'];
+  var PENTA = [1, 1.125, 1.25, 1.5, 1.6667];
+
+  var grid, score = 0, bestScore = 0, bestTile = 1, seq = null, nextQ = [];
+  var mode = 'daily', seedKey = '', busy = false, gameEnded = false;
+  var dust = 0, streak = 0, lastDay = '';
+  var $ = function(id){ return document.getElementById(id); };
+  var boardEl = $('board');
+
+  function colorOf(lv){ return COLORS[(lv - 1) % COLORS.length]; }
+  function fontOf(lv){ return lv >= 100 ? 15 : (lv >= 10 ? 19 : 24); }
+
+  /* ---------- 存档 ---------- */
+  function load(){
+    try {
+      var s = JSON.parse(localStorage.getItem('merge_tower_v1') || '{}');
+      bestScore = s.bestScore || 0; bestTile = s.bestTile || 1;
+      dust = s.dust || 0; streak = s.streak || 0; lastDay = s.lastDay || '';
+    } catch(e){ bestScore = 0; bestTile = 1; dust = 0; streak = 0; lastDay = ''; }
+  }
+  function save(){
+    try { localStorage.setItem('merge_tower_v1', JSON.stringify({ bestScore:bestScore, bestTile:bestTile, dust:dust, streak:streak, lastDay:lastDay })); } catch(e){}
+  }
+  function dayKey(off){
+    var d = new Date(); if (off) d.setDate(d.getDate() + off);
+    return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+  }
+
+  /* ---------- 音效（WebAudio，零素材） ---------- */
+  var ac = null;
+  function audio(){
+    if (ac) return ac;
+    try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ ac = null; }
+    return ac;
+  }
+  function playMerge(toLevel, chain){
+    var a = audio(); if (!a) return;
+    if (a.state === 'suspended') a.resume();
+    var i = Math.min(Math.max(toLevel - 2, 0), PENTA.length - 1);
+    var oct = toLevel >= 7 ? 2 : (toLevel >= 5 ? 1.5 : 1);
+    var base = 260 * PENTA[i] * oct;
+    var t0 = a.currentTime;
+    [1, 1.5].forEach(function(mult, k){
+      var o = a.createOscillator(), g = a.createGain();
+      o.type = k === 0 ? 'triangle' : 'sine';
+      o.frequency.setValueAtTime(base * mult, t0);
+      o.frequency.exponentialRampToValueAtTime(base * mult * 1.55, t0 + 0.12);
+      var vol = (k === 0 ? 0.15 : 0.06) * (chain ? 1.3 : 1);
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(vol, t0 + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.24);
+      o.connect(g); g.connect(a.destination);
+      o.start(t0); o.stop(t0 + 0.28);
+    });
+  }
+  function playDrop(){
+    var a = audio(); if (!a) return;
+    if (a.state === 'suspended') a.resume();
+    var t0 = a.currentTime, o = a.createOscillator(), g = a.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(180, t0);
+    o.frequency.exponentialRampToValueAtTime(90, t0 + 0.09);
+    g.gain.setValueAtTime(0.12, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.11);
+    o.connect(g); g.connect(a.destination);
+    o.start(t0); o.stop(t0 + 0.13);
+  }
+  function playOver(){
+    var a = audio(); if (!a) return;
+    if (a.state === 'suspended') a.resume();
+    var t0 = a.currentTime;
+    [0, -2, -5, -9].forEach(function(semi, i){
+      var o = a.createOscillator(), g = a.createGain();
+      o.type = 'triangle';
+      o.frequency.value = 392 * Math.pow(2, semi / 12);
+      var st = t0 + i * 0.11;
+      g.gain.setValueAtTime(0, st);
+      g.gain.linearRampToValueAtTime(0.13, st + 0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001, st + 0.4);
+      o.connect(g); g.connect(a.destination);
+      o.start(st); o.stop(st + 0.42);
+    });
+  }
+  function buzz(p){ if (navigator.vibrate) { try { navigator.vibrate(p); } catch(e){} } }
+
+  /* ---------- 视觉反馈 ---------- */
+  function cellRect(c, r){
+    var el = boardEl.querySelector('.cell[data-c="' + c + '"][data-r="' + r + '"]');
+    return el ? el.getBoundingClientRect() : null;
+  }
+  function burst(rect, color, n){
+    if (!rect) return;
+    var cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2;
+    for (var k = 0; k < n; k++){
+      var p = document.createElement('div');
+      p.className = 'p';
+      p.style.background = color;
+      var sz = 5 + Math.random() * 7;
+      p.style.width = p.style.height = sz + 'px';
+      p.style.left = (cx - 4) + 'px';
+      p.style.top = (cy - 4) + 'px';
+      document.body.appendChild(p);
+      var ang = Math.random() * Math.PI * 2, dist = 24 + Math.random() * 54;
+      var dx = Math.cos(ang) * dist, dy = Math.sin(ang) * dist - 16;
+      (function(el, dx, dy){
+        requestAnimationFrame(function(){
+          el.style.transition = 'transform .6s cubic-bezier(.2,.7,.4,1), opacity .6s ease';
+          el.style.transform = 'translate(' + dx + 'px,' + dy + 'px) scale(.35)';
+          el.style.opacity = '0';
+        });
+        setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 680);
+      })(p, dx, dy);
+    }
+  }
+  function flyScore(rect, pts, big){
+    if (!rect) return;
+    var d = document.createElement('div');
+    d.className = 'fly';
+    d.textContent = '+' + pts;
+    d.style.fontSize = (big ? 42 : 26) + 'px';
+    d.style.color = big ? '#FFD479' : '#EDEAF5';
+    d.style.left = (rect.left + rect.width / 2 - 26) + 'px';
+    d.style.top = (rect.top + rect.height / 2 - 12) + 'px';
+    document.body.appendChild(d);
+    requestAnimationFrame(function(){
+      d.style.transition = 'transform .95s cubic-bezier(.15,.8,.3,1), opacity .95s ease';
+      d.style.transform = 'translateY(-72px) scale(1.14)';
+      d.style.opacity = '0';
+    });
+    setTimeout(function(){ if (d.parentNode) d.parentNode.removeChild(d); }, 1000);
+  }
+  function toast(text, color){
+    var t = $('toast');
+    t.textContent = text;
+    t.style.color = color || '#FFD479';
+    t.classList.remove('show'); void t.offsetWidth; t.classList.add('show');
+  }
+  function shake(){
+    document.body.classList.remove('shake'); void document.body.offsetWidth;
+    document.body.classList.add('shake');
+    setTimeout(function(){ document.body.classList.remove('shake'); }, 340);
+  }
+
+  /* ---------- 渲染 ---------- */
+  function buildBoard(){
+    boardEl.innerHTML = '<div id="danger"></div><div id="colHint"></div>';
+    for (var r = 0; r < Logic.ROWS; r++){
+      for (var c = 0; c < Logic.COLS; c++){
+        var d = document.createElement('div');
+        d.className = 'cell';
+        d.dataset.c = c; d.dataset.r = r;
+        boardEl.appendChild(d);
+      }
+    }
+    positionDanger();
+  }
+  function positionDanger(){
+    var d = $('danger');
+    var ref = boardEl.querySelector('.cell[data-r="2"]');
+    if (ref && d){
+      var br = boardEl.getBoundingClientRect(), rr = ref.getBoundingClientRect();
+      d.style.top = (rr.top - br.top + rr.height * 0.35) + 'px';
+    }
+  }
+  function render(opts){
+    opts = opts || {};
+    var popSet = {}; (opts.pop || []).forEach(function(p){ popSet[p] = 1; });
+    var bornSet = {}; (opts.born || []).forEach(function(p){ bornSet[p] = 1; });
+    var dropAt = opts.dropAt;
+
+    for (var r = 0; r < Logic.ROWS; r++){
+      for (var c = 0; c < Logic.COLS; c++){
+        var cell = boardEl.querySelector('.cell[data-c="' + c + '"][data-r="' + r + '"]');
+        if (!cell) continue;
+        var v = grid[Logic.idx(c, r)];
+        var existing = cell.firstChild;
+        if (v < 0){
+          if (existing) cell.removeChild(existing);
+          continue;
+        }
+        var needNew = !existing || Number(existing.dataset.lv) !== v;
+        if (needNew){
+          if (existing) cell.removeChild(existing);
+          var b = document.createElement('div');
+          b.className = 'blk';
+          b.dataset.lv = v;
+          b.style.background = colorOf(v);
+          b.style.fontSize = fontOf(v) + 'px';
+          b.textContent = v;
+          var id = Logic.idx(c, r);
+          if (popSet[id]) b.className += ' pop';
+          else if (bornSet[id]) b.className += ' born';
+          else if (dropAt && dropAt.at === id){
+            b.className += ' drop';
+            b.style.setProperty('--fd', '-' + ((dropAt.rows + 0.6) * (cell.getBoundingClientRect().height + 4)) + 'px');
+          }
+          cell.appendChild(b);
+        }
+      }
+    }
+    var sc = $('score');
+    if (sc.textContent !== String(score)){ sc.textContent = score; sc.classList.remove('bump'); void sc.offsetWidth; sc.classList.add('bump'); }
+    var bt = Logic.maxLevel(grid);
+    if (bt > bestTile) bestTile = bt;
+    $('best').textContent = bt || 1;
+    $('bestScore').textContent = bestScore;
+    var anyNear = false;
+    for (var cc = 0; cc < Logic.COLS; cc++) if (Logic.height(grid, cc) >= Logic.ROWS - 2) anyNear = true;
+    $('danger').className = anyNear ? 'on' : '';
+    updateNext();
+  }
+  function updateNext(){
+    var a = $('n1'), b = $('n2');
+    var v1 = nextQ[0] || 1, v2 = nextQ[1] || 1;
+    a.textContent = v1; a.style.background = colorOf(v1); a.style.fontSize = fontOf(v1) + 'px';
+    b.textContent = v2; b.style.background = colorOf(v2); b.style.fontSize = (fontOf(v2) - 4) + 'px';
+  }
+  function say(t, dim){ var m = $('msg'); m.textContent = t; m.className = dim ? 'dim' : ''; }
+
+  /* ---------- 交互 ---------- */
+  function tapColumn(col){
+    if (busy || gameEnded) return;
+    if (Logic.isFull(grid, col)){ say('这一列满了 · 换一列'); buzz(12); return; }
+    busy = true;
+    audio();
+
+    var lv = nextQ.shift();
+    nextQ.push(seq());
+    var h0 = Logic.height(grid, col);
+    var d = Logic.drop(grid, col, lv);
+    playDrop(); buzz(8);
+    render({ dropAt: { at: d.at, rows: Logic.ROWS - 1 - h0 } });
+
+    setTimeout(function(){
+      var events = Logic.resolve(grid);
+      if (events.length){
+        var popCells = [], bornCells = [], total = 0, lastRect = null, chain = events.length > 1;
+        events.forEach(function(e, i){
+          popCells = popCells.concat(e.cells);
+          bornCells.push(e.at);
+          total += Logic.scoreFor(e.to);
+          var rect = cellRect(e.col, e.row);
+          burst(rect, colorOf(e.to), e.to >= 6 ? 12 : (e.to >= 4 ? 9 : 6));
+          if (i === events.length - 1) lastRect = rect;
+        });
+        score += total;
+        var topLv = events[events.length - 1].to;
+        flyScore(lastRect, total, topLv >= 5);
+        playMerge(topLv, chain);
+        if (topLv >= 7){ shake(); toast('太漂亮了！', '#FFD479'); buzz([16,36,22]); }
+        else if (topLv >= 5){ shake(); toast('漂亮', '#6FD8C8'); buzz([14,28,18]); }
+        else if (chain){ toast('连锁 ×' + events.length, '#FF9BD0'); }
+        else if (topLv >= 4){ toast('不错', '#8B7BF7'); }
+        say('合成到 ' + topLv + ' 级  +' + total);
+        render({ pop: popCells, born: bornCells });
+        setTimeout(function(){ render(); finishTurn(); }, 280);
+      } else {
+        say('放下 ' + lv + ' 级方块', true);
+        render();
+        finishTurn();
+      }
+    }, 180);
+  }
+
+  function finishTurn(){
+    busy = false;
+    if (Logic.anyFull(grid)) return gameOver();
+    if (Logic.height(grid, 0) >= Logic.ROWS - 2) say('小心 · 快堆到顶了');
+  }
+
+  function gameOver(){
+    gameEnded = true;
+    if (score > bestScore) bestScore = score;
+    var bt = Logic.maxLevel(grid);
+    if (bt > bestTile) bestTile = bt;
+
+    var today = dayKey(0), gained = Math.max(3, Math.round(score / 60)), bonus = '';
+    if (lastDay !== today){
+      if (lastDay === dayKey(-1)){ streak++; bonus = '<br>连续第 <b>' + streak + '</b> 天，星尘 +' + (streak * 2); gained += streak * 2; }
+      else { streak = 1; bonus = '<br>新的一天，连击开始'; }
+      lastDay = today;
+    }
+    dust += gained;
+    save();
+
+    $('finalScore').textContent = score;
+    $('tileShow').textContent = bt;
+    $('tileShow').style.background = colorOf(bt);
+    $('tileShow').style.fontSize = (fontOf(bt) + 4) + 'px';
+    $('cmp').innerHTML =
+      '本局最高合出 <b>' + bt + '</b> 级<br>' +
+      '历史最高分 <b>' + bestScore + '</b>' + (score >= bestScore ? ' · 破纪录！' : '') +
+      '<br>星尘 <b>+' + gained + '</b>（共 ' + dust + '）' + bonus;
+    $('over').classList.add('show');
+    playOver(); buzz([20,50,20,50,40]);
+    render();
+  }
+
+  function newGame(keepMode){
+    if (!keepMode) mode = (mode === 'daily') ? 'practice' : 'daily';
+    if (mode === 'daily'){
+      seedKey = dayKey(0);
+      $('modeTitle').textContent = '合成塔 · 每日序列';
+      $('modeSub').textContent = seedKey + ' · 今天所有人同一串方块';
+      $('btnMode').textContent = '换练习模式';
+    } else {
+      seedKey = 'practice-' + Date.now();
+      $('modeTitle').textContent = '合成塔 · 练习模式';
+      $('modeSub').textContent = '随机序列 · 练手感';
+      $('btnMode').textContent = '回每日序列';
+    }
+    seq = Logic.makeSeq(Logic.hashStr(seedKey));
+    grid = Logic.empty();
+    score = 0; busy = false; gameEnded = false;
+    nextQ = [seq(), seq()];
+    $('over').classList.remove('show');
+    say('点一列放下方块 · 同级相邻自动合成升级', true);
+    buildBoard();
+    render();
+  }
+
+  /* ---------- 输入 ---------- */
+  function colFromPoint(x, y){
+    var el = document.elementFromPoint(x, y);
+    if (!el) return -1;
+    var cell = el.closest ? el.closest('.cell') : null;
+    if (cell) return Number(cell.dataset.c);
+    var blk = el.closest ? el.closest('.blk') : null;
+    if (blk && blk.parentNode && blk.parentNode.dataset) return Number(blk.parentNode.dataset.c);
+    return -1;
+  }
+  function showHint(col){
+    var h = $('colHint');
+    if (col < 0 || !h){ if (h) h.style.opacity = 0; return; }
+    var br = boardEl.getBoundingClientRect();
+    var ref = boardEl.querySelector('.cell[data-c="' + col + '"][data-r="0"]');
+    if (!ref) return;
+    var rr = ref.getBoundingClientRect();
+    h.style.left = (rr.left - br.left) + 'px';
+    h.style.width = rr.width + 'px';
+    h.style.opacity = 1;
+  }
+  var downX = 0, downY = 0, moved = false;
+  boardEl.addEventListener('pointerdown', function(e){
+    downX = e.clientX; downY = e.clientY; moved = false;
+    showHint(colFromPoint(e.clientX, e.clientY));
+  });
+  boardEl.addEventListener('pointermove', function(e){
+    if (Math.abs(e.clientX - downX) > 12 || Math.abs(e.clientY - downY) > 12) moved = true;
+    showHint(colFromPoint(e.clientX, e.clientY));
+  });
+  boardEl.addEventListener('pointerup', function(e){
+    showHint(-1);
+    if (moved) return;
+    var c = colFromPoint(e.clientX, e.clientY);
+    if (c >= 0) tapColumn(c);
+  });
+  boardEl.addEventListener('pointercancel', function(){ showHint(-1); });
+  boardEl.addEventListener('pointerleave', function(){ showHint(-1); });
+
+  $('btnRestart').addEventListener('click', function(){ newGame(true); });
+  $('btnAgain').addEventListener('click', function(){ newGame(true); });
+  $('btnMode').addEventListener('click', function(){ newGame(false); });
+
+  /* ---------- 启动 ---------- */
+  load();
+  var st = selfTest();
+  if (st !== 'OK') console.warn('selfTest', st);
+  window.__selfTest = st;
+  window.__logic = Logic;
+  newGame(true);
+  mode = 'daily';
+  newGame(true);
+})();
+</script>
+</body>
+</html>
