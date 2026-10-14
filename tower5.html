@@ -1,0 +1,1184 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#12111E">
+<title>合成塔</title>
+<style>
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+  html,body{margin:0;padding:0;height:100%;overflow:hidden;background:#12111E;color:#EDEAF5;
+    font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",sans-serif;
+    user-select:none;-webkit-user-select:none;touch-action:manipulation}
+  #app{position:fixed;inset:0;display:flex;flex-direction:column;
+    padding:calc(env(safe-area-inset-top) + 5px) 8px calc(env(safe-area-inset-bottom) + 5px)}
+  body.shake #app{animation:shake .3s cubic-bezier(.36,.07,.19,.97)}
+  @keyframes shake{
+    10%,90%{transform:translate3d(-2px,1px,0)}20%,80%{transform:translate3d(4px,-2px,0)}
+    30%,50%,70%{transform:translate3d(-6px,2px,0)}40%,60%{transform:translate3d(6px,-1px,0)}}
+  header{flex:0 0 auto;padding:1px 4px 4px}
+  .top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+  .lv{font-size:12px;font-weight:900;color:#FFD479}
+  .goal{font-size:14px;font-weight:800;margin-top:1px;line-height:1.25}
+  .goal .now{color:#6FD8C8}
+  .next{display:flex;align-items:center;gap:6px;flex:0 0 auto}
+  .next .k{font-size:9.5px;color:#8E88A8}
+  .nbox{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;
+    font-size:15px;font-weight:900;color:rgba(18,17,30,.62);box-shadow:inset 0 -2px 0 rgba(0,0,0,.18)}
+  .nbox.sm{width:25px;height:25px;font-size:12px;border-radius:7px;opacity:.75}
+  .nbox.bomb{background:#2A2740;color:#FF8A8A;box-shadow:inset 0 0 0 2px #FF6B6B}
+  .nbox.rainbow{background:linear-gradient(135deg,#FF6B6B,#FFD479,#7FD87F,#6FD8C8,#8B7BF7);color:#fff}
+  .stats{display:flex;gap:12px;margin-top:5px;align-items:flex-end}
+  .stat{display:flex;flex-direction:column;gap:0}
+  .stat .k{font-size:9px;letter-spacing:.06em;color:#8E88A8;text-transform:uppercase}
+  .stat .v{font-size:18px;font-weight:900;font-variant-numeric:tabular-nums;line-height:1.1}
+  .stat .v.bump{animation:bump .3s ease}
+  .stat .v.warn{color:#FF8A8A}
+  @keyframes bump{0%{transform:scale(1)}40%{transform:scale(1.3);color:#FFD479}100%{transform:scale(1)}}
+  #comboWrap{flex:0 0 auto;height:21px;margin-top:4px;position:relative;border-radius:7px;
+    background:#1B1930;overflow:hidden;box-shadow:inset 0 0 0 1px #262340}
+  #comboBar{position:absolute;left:0;top:0;bottom:0;width:0%;
+    background:linear-gradient(90deg,#8B7BF7,#FF9BD0,#FFD479);transition:width .22s ease}
+  #comboTxt{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+    font-size:11.5px;font-weight:900;text-shadow:0 1px 3px rgba(0,0,0,.5)}
+  #comboWrap.hot #comboBar{box-shadow:0 0 14px rgba(255,212,121,.8)}
+  #wrap{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;justify-content:center}
+  #colHead{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;padding:0 5px 4px;max-width:430px;
+    width:100%;margin:0 auto}
+  .ch{height:19px;border-radius:6px;display:flex;align-items:center;justify-content:center;
+    font-size:11px;font-weight:900}
+  .ch.bonus{background:linear-gradient(180deg,#FFD479,#E0A83C);color:#3A2A00}
+  .ch.recycle{background:linear-gradient(180deg,#6FD8C8,#3FA89A);color:#00332C}
+  .ch.plain{background:transparent}
+  #board{width:100%;max-width:430px;display:grid;grid-template-columns:repeat(6,1fr);
+    grid-template-rows:repeat(8,1fr);gap:4px;padding:5px;border-radius:14px;background:#191728;
+    box-shadow:inset 0 0 0 1px #262340;position:relative;overflow:hidden;margin:0 auto}
+  .cell{border-radius:9px;background:rgba(255,255,255,.035);position:relative}
+  .cell.bcol{background:rgba(255,212,121,.10);box-shadow:inset 0 0 0 1.5px rgba(255,212,121,.35)}
+  .cell.rcol{background:rgba(111,216,200,.10);box-shadow:inset 0 0 0 1.5px rgba(111,216,200,.32)}
+  body.armed .cell{cursor:crosshair}
+  body.armed .cell{box-shadow:inset 0 0 0 1px rgba(255,107,107,.5)}
+  .blk{position:absolute;inset:0;border-radius:9px;display:flex;align-items:center;justify-content:center;
+    font-weight:900;color:rgba(18,17,30,.6);
+    box-shadow:inset 0 -3px 0 rgba(0,0,0,.16),inset 0 2px 0 rgba(255,255,255,.22);will-change:transform}
+  .blk.bomb{background:radial-gradient(circle at 35% 30%,#4A4060,#221E36);color:#FF8A8A;
+    box-shadow:inset 0 0 0 2px #FF6B6B,inset 0 -3px 0 rgba(0,0,0,.3)}
+  .blk.stone{background:linear-gradient(160deg,#6A6480,#413C55);color:#D8D2E8;font-size:18px;
+    box-shadow:inset 0 0 0 2px #847CA0,inset 0 -3px 0 rgba(0,0,0,.35)}
+  .blk.rainbow{background:linear-gradient(135deg,#FF6B6B,#FFD479,#7FD87F,#6FD8C8,#8B7BF7);
+    color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.45)}
+  .blk.drop{animation:fallIn .16s ease-in}
+  @keyframes fallIn{from{transform:translateY(var(--fd,0px))}to{transform:translateY(0)}}
+  .blk.pop{animation:popM .24s ease forwards}
+  @keyframes popM{0%{transform:scale(1)}50%{transform:scale(1.34);filter:brightness(2)}100%{transform:scale(.1);opacity:0}}
+  .blk.boom{animation:boomM .3s ease forwards}
+  @keyframes boomM{0%{transform:scale(1);filter:brightness(1)}40%{transform:scale(1.5);filter:brightness(3)}100%{transform:scale(.2);opacity:0}}
+  .blk.smash{animation:smashM .3s ease forwards}
+  @keyframes smashM{0%{transform:scale(1) rotate(0)}50%{transform:scale(1.25) rotate(8deg)}100%{transform:scale(.1) rotate(-16deg);opacity:0}}
+  .blk.born{animation:born .3s cubic-bezier(.2,1.6,.4,1)}
+  @keyframes born{0%{transform:scale(.3)}60%{transform:scale(1.22)}100%{transform:scale(1)}}
+  #blast{position:absolute;border-radius:50%;pointer-events:none;z-index:6;
+    background:radial-gradient(circle,rgba(255,140,120,.85),rgba(255,90,90,0) 70%);opacity:0;transition:opacity .1s}
+  #danger{position:absolute;left:5px;right:5px;height:2px;
+    background:linear-gradient(90deg,transparent,#FF6B6B,transparent);opacity:0;transition:opacity .3s;
+    pointer-events:none;z-index:5}
+  #danger.on{opacity:.85}
+  #colHint{position:absolute;top:5px;bottom:5px;border-radius:10px;background:rgba(255,255,255,.10);
+    box-shadow:inset 0 0 0 2px rgba(255,255,255,.45);opacity:0;transition:opacity .12s;
+    pointer-events:none;z-index:4}
+  .p{position:fixed;width:8px;height:8px;border-radius:50%;pointer-events:none;z-index:60;will-change:transform,opacity}
+  .fly{position:fixed;font-weight:900;pointer-events:none;z-index:70;font-variant-numeric:tabular-nums;
+    will-change:transform,opacity;text-shadow:0 2px 10px rgba(0,0,0,.6)}
+  #toast{position:fixed;left:0;right:0;top:27%;text-align:center;pointer-events:none;z-index:80;
+    font-size:32px;font-weight:900;opacity:0;letter-spacing:.03em}
+  #toast.show{animation:toastIn .95s cubic-bezier(.2,.9,.3,1)}
+  @keyframes toastIn{0%{opacity:0;transform:scale(.5) translateY(14px)}22%{opacity:1;transform:scale(1.12)}
+    38%{transform:scale(1)}100%{opacity:0;transform:scale(1.02) translateY(-22px)}}
+  #foot{flex:0 0 auto;padding-top:5px}
+  #tools{display:flex;gap:7px;margin-bottom:6px}
+  .tool{flex:1;background:#221F36;border-radius:12px;padding:9px 0;text-align:center;
+    box-shadow:inset 0 0 0 1px #37335A;cursor:pointer;transition:transform .08s,background .15s}
+  .tool:active{transform:scale(.96)}
+  .tool.on{background:#4A2A38;box-shadow:inset 0 0 0 2px #FF6B6B}
+  .tool.dead{opacity:.32}
+  .tool .ico{font-size:19px;line-height:1.1}
+  .tool .lbl{font-size:10px;color:#A9A3C0;margin-top:1px}
+  .tool .n{font-size:12px;font-weight:900;color:#FFD479}
+  #msg{font-size:12.5px;line-height:1.45;min-height:18px;color:#FFD479;text-align:center}
+  #msg.dim{color:#8E88A8}
+  #bar{display:flex;gap:8px;margin-top:5px}
+  button{flex:1;border:0;border-radius:12px;padding:11px 0;font-size:14px;font-weight:800;
+    font-family:inherit;color:#141322;background:#FFD479;cursor:pointer;transition:transform .08s}
+  button.ghost{background:#242238;color:#EDEAF5;box-shadow:inset 0 0 0 1px #37335A}
+  button:active{transform:scale(.97)}
+  .note{font-size:9.5px;color:#565073;text-align:center;margin-top:4px;line-height:1.4}
+  #over{position:fixed;inset:0;background:rgba(18,17,30,.97);display:none;z-index:90;
+    flex-direction:column;align-items:center;justify-content:center;gap:9px;padding:24px;text-align:center}
+  #over.show{display:flex}
+  #over h2{margin:0;font-size:21px;font-weight:900}
+  #over h2.win{color:#FFD479}
+  #over h2.lose{color:#FF8A8A}
+  #over .big{font-size:46px;font-weight:900;color:#FFD479;font-variant-numeric:tabular-nums;line-height:1}
+  #over .cmp{font-size:12.5px;color:#8E88A8;line-height:1.7}
+  #over .cmp b{color:#6FD8C8}
+  #tileShow{width:52px;height:52px;border-radius:13px;display:flex;align-items:center;justify-content:center;
+    font-size:23px;font-weight:900;color:rgba(18,17,30,.6)}
+  #over button{max-width:230px;width:100%}
+  #levelPick{position:fixed;inset:0;background:rgba(18,17,30,.97);display:none;z-index:95;
+    flex-direction:column;padding:26px 20px;overflow-y:auto}
+  #levelPick h2{margin:0 0 14px;font-size:18px;text-align:center}
+  #grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;max-width:360px;margin:0 auto;width:100%}
+  /* 新发现弹窗 */
+  #discover{position:fixed;inset:0;display:none;align-items:center;justify-content:center;
+    z-index:92;pointer-events:none;background:rgba(18,17,30,.55)}
+  #discover.show{display:flex;animation:dIn .3s ease}
+  @keyframes dIn{from{opacity:0}to{opacity:1}}
+  .dcard{background:#1E1C2E;border-radius:22px;padding:20px 26px 18px;text-align:center;
+    box-shadow:0 0 0 2px #FFD479,0 14px 50px rgba(0,0,0,.6);animation:dPop .45s cubic-bezier(.2,1.5,.4,1)}
+  @keyframes dPop{0%{transform:scale(.5) rotate(-6deg)}60%{transform:scale(1.06) rotate(1deg)}100%{transform:scale(1)}}
+  .dtag{font-size:12px;font-weight:900;color:#FFD479;letter-spacing:.2em;margin-bottom:8px}
+  .dimg{width:104px;height:104px;margin:0 auto 10px;border-radius:18px;display:flex;
+    align-items:center;justify-content:center;overflow:hidden}
+  .dname{font-size:24px;font-weight:900;color:#EDEAF5}
+  .drare{font-size:11.5px;color:#8E88A8;margin-top:3px;letter-spacing:.06em}
+  .dhint{font-size:12px;color:#6FD8C8;margin-top:11px;max-width:180px;line-height:1.5}
+  /* 图鉴 */
+  #codex{position:fixed;inset:0;background:rgba(18,17,30,.98);display:none;z-index:96;
+    flex-direction:column;padding:24px 18px;overflow-y:auto}
+  #codex.show{display:flex}
+  .chead{text-align:center;margin-bottom:16px}
+  .chead h2{margin:0;font-size:19px;font-weight:900}
+  .chead .sub{font-size:12px;color:#8E88A8;margin-top:4px}
+  #codexGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;max-width:380px;
+    margin:0 auto;width:100%}
+  .ccell{background:#1B1930;border-radius:14px;padding:10px 6px 8px;text-align:center;
+    box-shadow:inset 0 0 0 1px #2A2740}
+  .ccell.locked{opacity:.55}
+  .cbox{width:100%;aspect-ratio:1;border-radius:10px;display:flex;align-items:center;
+    justify-content:center;margin-bottom:6px}
+  .cname{font-size:12px;font-weight:800;color:#EDEAF5}
+  .crare{font-size:9.5px;color:#8E88A8;margin-top:2px}
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="top">
+      <div>
+        <div class="lv" id="lvLabel">第 1 关</div>
+        <div class="goal" id="goalLabel">合出一个 3 级</div>
+      </div>
+      <div class="next">
+        <span class="k">下一个</span>
+        <div class="nbox" id="n1">1</div>
+        <div class="nbox sm" id="n2">2</div>
+      </div>
+    </div>
+    <div class="stats">
+      <div class="stat"><span class="k">分数</span><span class="v" id="score">0</span></div>
+      <div class="stat"><span class="k">步数</span><span class="v" id="moves">∞</span></div>
+      <div class="stat"><span class="k">最高方块</span><span class="v" id="best">1</span></div>
+      <div class="stat"><span class="k">连锁</span><span class="v" id="chainN">0</span></div>
+    </div>
+    <div id="comboWrap"><div id="comboBar"></div><div id="comboTxt">连击 ×1.0 · 连续合成才能涨</div></div>
+  </header>
+
+  <div id="wrap">
+    <div id="colHead"></div>
+    <div id="board"><div id="danger"></div><div id="colHint"></div><div id="blast"></div></div>
+  </div>
+
+  <div id="foot">
+    <div id="tools">
+      <div class="tool" id="toolHammer"><div class="ico">🔨</div><div class="lbl">锤子 <span class="n" id="nHammer">0</span></div></div>
+      <div class="tool" id="toolRefresh"><div class="ico">🔄</div><div class="lbl">换一个 <span class="n" id="nRefresh">0</span></div></div>
+      <div class="tool dead" id="toolInfo"><div class="ico">🧱</div><div class="lbl">石块 <span class="n" id="nStone">0</span></div></div>
+    </div>
+    <div id="msg" class="dim">点一列放下方块 · 同级相邻自动合成</div>
+    <div id="bar">
+      <button class="ghost" id="btnCodex">图鉴</button>
+      <button class="ghost" id="btnRetry">重开</button>
+      <button class="ghost" id="btnLevels">选关</button>
+    </div>
+    <div class="note">原型 · 关卡由 AI 逐关实跑校准 · 宝石资产由 AI 生成 + 自动抠图</div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<div id="over">
+  <h2 id="overTitle">过关</h2>
+  <div id="tileShow">3</div>
+  <div class="big" id="finalScore">0</div>
+  <div class="cmp" id="cmp"></div>
+  <button id="btnNext">下一关</button>
+</div>
+
+<div id="levelPick">
+  <h2>选择关卡</h2>
+  <div id="grid"></div>
+  <button id="btnClosePick" style="max-width:220px;margin:18px auto 0">返回</button>
+</div>
+
+<div id="discover"></div>
+
+<div id="codex">
+  <div class="chead">
+    <h2>宝石图鉴</h2>
+    <div class="sub">已发现 <span id="codexCount">0 / 10</span> · 每次合成升级都会解锁新的</div>
+  </div>
+  <div id="codexGrid"></div>
+  <button id="btnCloseCodex" style="max-width:220px;width:100%;margin:20px auto 0">返回</button>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  /* =====================================================================
+     纯逻辑层 —— 零 DOM 依赖，可原样移植为 TypeScript 并单测。
+
+     方块编码：
+       -1  空
+        0  炸弹（落下清空自身 3×3）
+     1..99 普通方块（数字即等级）
+       100 石块（不可合成，只能被炸弹或锤子清除）
+       101 彩虹（万能块：与任意相邻单块即可合成，产出该块等级 +1）
+     ===================================================================== */
+  var Logic = (function(){
+    var COLS = 6, ROWS = 8;
+    var EMPTY = -1, BOMB = 0, STONE = 100, RAINBOW = 101;
+
+    var idx = function(c, r){ return r * COLS + c; };
+    var empty = function(){ var g = new Array(COLS*ROWS); for (var i=0;i<g.length;i++) g[i]=EMPTY; return g; };
+    var clone = function(g){ return g.slice(); };
+    var isNormal = function(v){ return v >= 1 && v <= 99; };
+    var isBomb = function(v){ return v === BOMB; };
+    var isStone = function(v){ return v === STONE; };
+    var isRainbow = function(v){ return v === RAINBOW; };
+
+    function gravity(g){
+      for (var c = 0; c < COLS; c++){
+        // k 必须显式声明：脚本处于 'use strict'，未声明赋值会抛 ReferenceError
+        var stack = [], r, k;
+        for (r = ROWS-1; r >= 0; r--){ var v = g[idx(c,r)]; if (v >= 0) stack.push(v); }
+        for (r = ROWS-1, k = 0; r >= 0; r--, k++) g[idx(c,r)] = k < stack.length ? stack[k] : EMPTY;
+      }
+      return g;
+    }
+    function height(g, c){
+      var h = 0;
+      for (var r = 0; r < ROWS; r++) if (g[idx(c,r)] >= 0) h++;
+      return h;
+    }
+    function neighborsOf(g, p){
+      var pc = p % COLS, pr = (p/COLS)|0, nb = [];
+      if (pr > 0) nb.push(idx(pc, pr-1));
+      if (pr < ROWS-1) nb.push(idx(pc, pr+1));
+      if (pc > 0) nb.push(idx(pc-1, pr));
+      if (pc < COLS-1) nb.push(idx(pc+1, pr));
+      return nb;
+    }
+
+    /* 找出所有"可合成的组合"。
+       规则：
+         · 同等级四邻连通的普通方块，size>=2 → 可合成（不消耗彩虹）
+         · 单块普通方块若紧邻彩虹 → 可与彩虹一起合成（产出该块等级 +1）
+       这样设计的原因：彩虹是稀缺资源，不该被已经能自己合成的大块白白吃掉。 */
+    function mergeSets(g){
+      var seen = new Array(g.length).fill(false), out = [];
+      for (var c = 0; c < COLS; c++) for (var r = 0; r < ROWS; r++){
+        var s = idx(c,r);
+        if (!isNormal(g[s]) || seen[s]) continue;
+        var lvl = g[s], stack = [s], comp = [];
+        seen[s] = true;
+        while (stack.length){
+          var p = stack.pop(); comp.push(p);
+          var nb = neighborsOf(g, p);
+          for (var k = 0; k < nb.length; k++){
+            var n = nb[k];
+            if (!seen[n] && g[n] === lvl){ seen[n] = true; stack.push(n); }
+          }
+        }
+        var set = comp.slice();
+        if (comp.length === 1){
+          var rainbows = [];
+          for (var q = 0; q < comp.length; q++){
+            var nb2 = neighborsOf(g, comp[q]);
+            for (var w = 0; w < nb2.length; w++){
+              if (isRainbow(g[nb2[w]]) && rainbows.indexOf(nb2[w]) < 0) rainbows.push(nb2[w]);
+            }
+          }
+          if (rainbows.length) set = comp.concat(rainbows);
+        }
+        if (set.length >= 2) out.push({ cells: set, level: lvl });
+      }
+      return out;
+    }
+
+    /* 取一个组合来合成：格子数最多优先；并列取"最低、最靠左"，保证确定性 */
+    function pickSet(g, sets){
+      var best = null, bk = null;
+      for (var i = 0; i < sets.length; i++){
+        var set = sets[i], lowest = -1, lowc = 99;
+        for (var k = 0; k < set.cells.length; k++){
+          var p = set.cells[k], pc = p % COLS, pr = (p/COLS)|0;
+          if (pr > lowest || (pr === lowest && pc < lowc)){ lowest = pr; lowc = pc; }
+        }
+        var key = [set.cells.length, lowest, -lowc];
+        if (!bk || key[0] > bk[0] || (key[0] === bk[0] && key[1] > bk[1]) ||
+            (key[0] === bk[0] && key[1] === bk[1] && key[2] > bk[2])){
+          bk = key; best = { set: set, at: idx(lowc, lowest), col: lowc, row: lowest };
+        }
+      }
+      return best;
+    }
+
+    function mergeStep(g, bonusCol, mult){
+      gravity(g);
+      var sets = mergeSets(g);
+      if (!sets.length) return null;
+      var pick = pickSet(g, sets);
+      var lvl = pick.set.level, cells = pick.set.cells.slice();
+      for (var i = 0; i < cells.length; i++) g[cells[i]] = EMPTY;
+      g[pick.at] = lvl + 1;
+      gravity(g);
+      var isBonus = (bonusCol >= 0 && pick.col === bonusCol);
+      var base = scoreFor(lvl + 1) * (isBonus ? 2 : 1);
+      return { level: lvl, to: lvl + 1, cells: cells, at: pick.at, col: pick.col, row: pick.row,
+               bonus: isBonus, base: base, pts: Math.round(base * mult) };
+    }
+    function resolve(g, bonusCol, mult){
+      if (mult === undefined) mult = 1;
+      var ev = [], e, guard = 0;
+      while ((e = mergeStep(g, bonusCol, mult)) && guard++ < 800) ev.push(e);
+      return ev;
+    }
+
+    /* 炸弹：清空以落点为中心的 3×3（含自身与石块），然后压实 */
+    function explode(g, at){
+      var c0 = at % COLS, r0 = (at/COLS)|0, cleared = [];
+      for (var dc = -1; dc <= 1; dc++) for (var dr = -1; dr <= 1; dr++){
+        var c = c0 + dc, r = r0 + dr;
+        if (c < 0 || c >= COLS || r < 0 || r >= ROWS) continue;
+        var i = idx(c, r);
+        if (g[i] >= 0){ cleared.push({ i: i, v: g[i], c: c, r: r }); g[i] = EMPTY; }
+      }
+      gravity(g);
+      return cleared;
+    }
+    /* 锤子：敲掉任意一格（石块也能敲） */
+    function smash(g, at){
+      if (g[at] < 0) return null;
+      var v = g[at], c = at % COLS, r = (at/COLS)|0;
+      g[at] = EMPTY;
+      gravity(g);
+      return { i: at, v: v, c: c, r: r };
+    }
+    function drop(g, col, value){
+      var h = height(g, col);
+      if (h >= ROWS) return null;
+      var at = idx(col, ROWS-1-h);
+      g[at] = value;
+      return { at: at, col: col, row: ROWS-1-h, value: value };
+    }
+
+    /* 关卡开始时预置石块：每列最多一块。
+       关键设计：石块**不放在最底部**，而是垫 1-2 个方块后再放。
+       放在底部只是浪费一格；垫高之后石块把这一列**切成两段** ——
+       下方那截只能横向跟邻列合成，上方另起一组。
+       这是"逼玩家重新规划"的空间约束，也是锤子的主要用途。 */
+    function placeStones(g, count, seed){
+      if (count <= 0) return g;
+      var rng = mulberry32(seed), cols = [], c;
+      for (c = 0; c < COLS; c++) cols.push(c);
+      for (var i = cols.length-1; i > 0; i--){
+        var j = Math.floor(rng() * (i+1)), t = cols[i]; cols[i] = cols[j]; cols[j] = t;
+      }
+      var n = Math.min(count, COLS);
+      for (var k = 0; k < n; k++){
+        var cc = cols[k];
+        var base = 1 + Math.floor(rng() * 2);          // 垫 1~2 个方块
+        if (base + 2 > ROWS) continue;
+        for (var b = 0; b < base; b++) g[idx(cc, ROWS-1-b)] = 1;   // 垫底的都是 1 级
+        g[idx(cc, ROWS-1-base)] = STONE;
+      }
+      return g;
+    }
+
+    function isFull(g, c){ return height(g, c) >= ROWS; }
+    function anyFull(g){ for (var c = 0; c < COLS; c++) if (isFull(g,c)) return true; return false; }
+    function maxLevel(g){ var m = 0; for (var i=0;i<g.length;i++) if (isNormal(g[i]) && g[i] > m) m = g[i]; return m; }
+    function maxHeight(g){ var m=0; for (var c=0;c<COLS;c++){ var h=height(g,c); if(h>m)m=h; } return m; }
+    function countStone(g){ var n=0; for (var i=0;i<g.length;i++) if (isStone(g[i])) n++; return n; }
+    function scoreFor(toLevel){ return 5 * Math.pow(2, toLevel); }
+    /* 连击曲线：连续 N 次落子都合到，倍率 = 1 + N*0.5，上限 ×3 */
+    function multiplierFor(combo){ return Math.min(1 + combo * 0.5, 3); }
+
+    function mulberry32(a){
+      return function(){
+        a |= 0; a = (a + 0x6D2B79F5) | 0;
+        var t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+    function hashStr(s){
+      var h = 2166136261;
+      for (var i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+      return h >>> 0;
+    }
+    /* 序列：普通块按权重；炸弹与彩虹按固定概率插入。三个比率都是实测校准值。 */
+    var BOMB_RATE = 0.06, RAINBOW_RATE = 0.05;
+    var W = [0.34, 0.30, 0.24, 0.12];
+    function makeSeq(seed){
+      var rng = mulberry32(seed);
+      return function(){
+        var r = rng();
+        if (r < BOMB_RATE) return BOMB;
+        if (r < BOMB_RATE + RAINBOW_RATE) return RAINBOW;
+        var x = rng(), acc = 0;
+        for (var i = 0; i < W.length; i++){ acc += W[i]; if (x < acc) return i + 1; }
+        return 1;
+      };
+    }
+
+    /* ---------- 关卡表 ----------
+       goal: level(N级) / score(N分) / combo(连击×N) / chain(N次连锁)
+       全部由 test-tower4-logic.mjs 用 AI 逐关实跑验证可达。 */
+    var LEVELS = [
+      { goal:{k:'level',v:3},    moves:0 ,  bonus:-1, stones:0, hammer:0, refresh:0, tip:'点一列放下方块，同级相邻会自动合成' },
+      { goal:{k:'level',v:4},    moves:0 , bonus:-1, stones:0, hammer:0, refresh:0, tip:'让同级的挨在一起，别把路堵死' },
+      { goal:{k:'score',v:1200}, moves:25,  bonus:-1, stones:0, hammer:0, refresh:0, tip:'分数会乘上连击倍率，连续合成很值钱' },
+      { goal:{k:'combo',v:2},    moves:15,  bonus:-1, stones:0, hammer:0, refresh:0, tip:'连击 ×2 = 连续 2 手都合到' },
+      { goal:{k:'level',v:5},    moves:15, bonus:-1, stones:0, hammer:0, refresh:0, tip:'有步数限制，每一手都要有意义' },
+      { goal:{k:'level',v:5},    moves:10,  bonus:2,  stones:0, hammer:0, refresh:0, tip:'金色列：合成落在这里，分数翻倍' },
+      { goal:{k:'score',v:4000}, moves:40,  bonus:4,  stones:0, hammer:0, refresh:0, tip:'为了双倍，值得把方块往金列堆吗？' },
+      { goal:{k:'level',v:5},    moves:25,  bonus:-1, stones:3, hammer:0, refresh:0, tip:'🧱 石块不能合成，把一列切成了两段' },
+      { goal:{k:'level',v:5},    moves:10,  bonus:-1, stones:3, hammer:2, refresh:0, tip:'🔨 锤子能敲掉任意一格 —— 包括石块' },
+      { goal:{k:'level',v:6},    moves:20, bonus:-1, stones:3, hammer:2, refresh:0, tip:'步数有限，锤子要用在刀刃上' },
+      { goal:{k:'score',v:5000}, moves:40,  bonus:2,  stones:3, hammer:2, refresh:0, tip:'🌈 彩虹是万能块：放在单块旁边就能合成' },
+      { goal:{k:'level',v:6},    moves:25,  bonus:3,  stones:4, hammer:2, refresh:2, tip:'🔄 换一个：丢掉当前方块，换新的（会中断连击）' },
+      { goal:{k:'chain',v:3},    moves:25,  bonus:3,  stones:3, hammer:2, refresh:2, tip:'把同级堆成一片，连锁才会来' },
+      { goal:{k:'level',v:7},    moves:35, bonus:-1, stones:4, hammer:3, refresh:2, tip:'7 级需要不少次合成，规划要远' },
+      { goal:{k:'combo',v:3},    moves:10,  bonus:4,  stones:3, hammer:3, refresh:2, tip:'连击 ×3 是上限，需要连续 4 手合成' },
+      { goal:{k:'score',v:16000},moves:95,  bonus:1,  stones:4, hammer:3, refresh:2, tip:'最后一关：金列、连击、道具全用上' }
+    ];
+
+    return {
+      COLS: COLS, ROWS: ROWS, EMPTY: EMPTY, BOMB: BOMB, STONE: STONE, RAINBOW: RAINBOW,
+      idx: idx, empty: empty, clone: clone, gravity: gravity, height: height,
+      neighborsOf: neighborsOf, mergeSets: mergeSets, mergeStep: mergeStep, resolve: resolve,
+      explode: explode, smash: smash, drop: drop, placeStones: placeStones,
+      isFull: isFull, anyFull: anyFull, maxLevel: maxLevel, maxHeight: maxHeight,
+      countStone: countStone, isNormal: isNormal, isBomb: isBomb, isStone: isStone, isRainbow: isRainbow,
+      scoreFor: scoreFor, multiplierFor: multiplierFor, makeSeq: makeSeq, hashStr: hashStr, LEVELS: LEVELS
+    };
+  })();
+
+  /* =====================================================================
+     表现层
+     ===================================================================== */
+  var COLORS = ['#B9B2C8','#B07BE8','#7FD8E8','#4FC98A','#E8506B','#F0B429','#3A6BE0','#DCE8F5','#E857B8','#FFD479'];
+  var PENTA = [1, 1.125, 1.25, 1.5, 1.6667];
+
+  /*
+    宝石图鉴 —— 这是"玩下去的理由"的核心载体。
+
+    诊断：原版方块只是数字 1~9，玩家视野里唯一的期待是"数字变大"。
+    合成大西瓜让人停不下来，是因为玩家**想看那个西瓜长什么样**；2048 同理。
+    没有身份的方块 → 没有好奇 → 没有图鉴 → 没有积累 → 没有可晒的东西。
+    一个缺口同时卡死了收集、社交、回访三个留存引擎。
+
+    文件名带英文描述（gem-01-quartz.png），**不能**用
+    'gem-' + padStart(2,'0') + '.png' 这种拼接去猜 —— 实测这会让
+    10 张图全部 404，而页面毫无报错、只静默退回 emoji 兜底。
+    所以这里显式列出文件名，与定义一一对应。
+  */
+  var GEMS = [
+    { n:'石英',     f:'gem-01-quartz',        e:'🪨', r:'普通' },
+    { n:'紫水晶',   f:'gem-02-amethyst',      e:'🔮', r:'普通' },
+    { n:'海蓝宝石', f:'gem-03-aquamarine',    e:'💧', r:'少见' },
+    { n:'祖母绿',   f:'gem-04-emerald',       e:'🟩', r:'少见' },
+    { n:'红宝石',   f:'gem-05-ruby',          e:'🔺', r:'稀有' },
+    { n:'黄玉',     f:'gem-06-topaz',         e:'🟡', r:'稀有' },
+    { n:'星光蓝宝', f:'gem-07-sapphire',      e:'⭐', r:'史诗' },
+    { n:'钻石',     f:'gem-08-diamond',       e:'💠', r:'史诗' },
+    { n:'龙晶',     f:'gem-09-dragoncrystal', e:'🔥', r:'传说' },
+    { n:'世界核心', f:'gem-10-worldcore',     e:'🌍', r:'传说' }
+  ];
+  var GEM_IMG = {};        // level -> Image（已加载才用）
+  var GEM_IMG_STATE = {};  // level -> 'loading' | 'ok' | 'fail'
+  function gemOf(lv){ return GEMS[Math.min(Math.max(lv,1), GEMS.length) - 1]; }
+  /* 图片按需加载：先用 emoji + 颜色渲染，图到了自动替换 —— 首屏不卡在网络上。
+     图挂了也不影响玩法，只是退回 emoji。 */
+  function ensureGemImg(lv){
+    if (lv < 1 || lv > GEMS.length) return;
+    if (GEM_IMG_STATE[lv]) return;
+    GEM_IMG_STATE[lv] = 'loading';
+    var im = new Image();
+    im.onload = function(){ GEM_IMG_STATE[lv] = 'ok'; GEM_IMG[lv] = im; if (typeof onGemReady === 'function') onGemReady(lv); };
+    im.onerror = function(){ GEM_IMG_STATE[lv] = 'fail'; };
+    im.src = 'gems/' + gemOf(lv).f + '.png';
+  }
+  var onGemReady = null;
+  /* 图鉴：已发现的最高等级（首次合出即记录） */
+  var codexSeen = {};
+
+  var grid, score = 0, movesUsed = 0, chains = 0, combo = 0, maxCombo = 0;
+  var levelIdx = 0, unlocked = 0, bestScore = 0, dust = 0, streak = 0, lastDay = '';
+  var bonusCol = -1, hammerLeft = 0, refreshLeft = 0, armed = false;
+  var seq = null, nextQ = [], busy = false, ended = false;
+  var $ = function(id){ return document.getElementById(id); };
+  var boardEl = $('board');
+
+  function level(){ return Logic.LEVELS[levelIdx]; }
+  function mult(){ return Logic.multiplierFor(combo); }
+
+  function load(){
+    try {
+      var s = JSON.parse(localStorage.getItem('merge_tower_v5') || '{}');
+      unlocked = s.unlocked || 0; bestScore = s.bestScore || 0;
+      dust = s.dust || 0; streak = s.streak || 0; lastDay = s.lastDay || '';
+      codexSeen = s.codexSeen || {};
+    } catch(e){ unlocked = 0; bestScore = 0; dust = 0; streak = 0; lastDay = ''; codexSeen = {}; }
+    if (unlocked >= Logic.LEVELS.length) unlocked = Logic.LEVELS.length - 1;
+  }
+  function save(){
+    try { localStorage.setItem('merge_tower_v5', JSON.stringify({ unlocked:unlocked, bestScore:bestScore, dust:dust, streak:streak, lastDay:lastDay, codexSeen:codexSeen })); } catch(e){}
+  }
+  function dayKey(off){
+    var d = new Date(); if (off) d.setDate(d.getDate()+off);
+    return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+  }
+
+  /* ---------- 音效（WebAudio，零素材） ---------- */
+  var ac = null;
+  function audio(){ if (ac) return ac; try { ac = new (window.AudioContext||window.webkitAudioContext)(); } catch(e){ ac=null; } return ac; }
+  function tone(freq, t0, dur, vol, type){
+    var a = audio(); if (!a) return;
+    var o = a.createOscillator(), g = a.createGain();
+    o.type = type || 'triangle';
+    o.frequency.setValueAtTime(freq, t0);
+    g.gain.setValueAtTime(0, t0);
+    g.gain.linearRampToValueAtTime(vol, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+    o.connect(g); g.connect(a.destination);
+    o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+  function playMerge(toLevel, chain, bonus, comboLevel){
+    var a = audio(); if (!a) return; if (a.state === 'suspended') a.resume();
+    var i = Math.min(Math.max(toLevel-2,0), PENTA.length-1);
+    var oct = toLevel >= 7 ? 2 : (toLevel >= 5 ? 1.5 : 1);
+    var cm = 1 + Math.min(comboLevel, 4) * 0.08;
+    var base = 260 * PENTA[i] * oct * (bonus ? 1.5 : 1) * cm;
+    var t0 = a.currentTime;
+    tone(base, t0, 0.24, (chain?0.19:0.15), 'triangle');
+    tone(base*1.5, t0, 0.2, 0.06, 'sine');
+    if (comboLevel >= 2) tone(base*2, t0+0.04, 0.16, 0.05, 'sine');
+  }
+  function playBoom(){
+    var a = audio(); if (!a) return; if (a.state === 'suspended') a.resume();
+    var t0 = a.currentTime, o = a.createOscillator(), g = a.createGain();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(220, t0);
+    o.frequency.exponentialRampToValueAtTime(40, t0 + 0.34);
+    g.gain.setValueAtTime(0.22, t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.36);
+    o.connect(g); g.connect(a.destination);
+    o.start(t0); o.stop(t0 + 0.38);
+  }
+  function playSmash(){
+    var a = audio(); if (!a) return; if (a.state === 'suspended') a.resume();
+    var t0 = a.currentTime;
+    tone(520, t0, 0.1, 0.16, 'square');
+    tone(180, t0+0.02, 0.16, 0.12, 'sawtooth');
+  }
+  function playRainbow(){
+    var a = audio(); if (!a) return; if (a.state === 'suspended') a.resume();
+    var t0 = a.currentTime;
+    [0,4,7,11,14].forEach(function(s,i){ tone(440*Math.pow(2,s/12), t0+i*0.05, 0.3, 0.09, 'sine'); });
+  }
+  function playDrop(){ var a = audio(); if (!a) return; if (a.state==='suspended') a.resume();
+    var t0=a.currentTime, o=a.createOscillator(), g=a.createGain();
+    o.type='sine'; o.frequency.setValueAtTime(180,t0); o.frequency.exponentialRampToValueAtTime(90,t0+0.09);
+    g.gain.setValueAtTime(0.11,t0); g.gain.exponentialRampToValueAtTime(0.0001,t0+0.11);
+    o.connect(g); g.connect(a.destination); o.start(t0); o.stop(t0+0.13); }
+  function playWin(){ var a=audio(); if(!a) return; if(a.state==='suspended') a.resume();
+    var t0=a.currentTime; [0,4,7,12].forEach(function(s,i){ tone(523.25*Math.pow(2,s/12), t0+i*0.09, 0.4, 0.13, 'sine'); }); }
+  function playLose(){ var a=audio(); if(!a) return; if(a.state==='suspended') a.resume();
+    var t0=a.currentTime; [0,-2,-5,-9].forEach(function(s,i){ tone(392*Math.pow(2,s/12), t0+i*0.11, 0.4, 0.12, 'triangle'); }); }
+  function buzz(p){ if (navigator.vibrate) { try { navigator.vibrate(p); } catch(e){} } }
+
+  /* ---------- 视觉 ---------- */
+  function cellRect(c, r){
+    var el = boardEl.querySelector('.cell[data-c="'+c+'"][data-r="'+r+'"]');
+    return el ? el.getBoundingClientRect() : null;
+  }
+  function burst(rect, color, n, power){
+    if (!rect) return;
+    var cx = rect.left+rect.width/2, cy = rect.top+rect.height/2;
+    for (var k=0;k<n;k++){
+      var p=document.createElement('div'); p.className='p'; p.style.background=color;
+      var sz=(3+Math.random()*6)*(power||1); p.style.width=p.style.height=sz+'px';
+      p.style.left=(cx-4)+'px'; p.style.top=(cy-4)+'px';
+      document.body.appendChild(p);
+      var ang=Math.random()*Math.PI*2, dist=(24+Math.random()*54)*(power||1);
+      (function(el,dx,dy){ requestAnimationFrame(function(){
+        el.style.transition='transform .65s cubic-bezier(.2,.7,.4,1), opacity .65s ease';
+        el.style.transform='translate('+dx+'px,'+dy+'px) scale(.35)'; el.style.opacity='0'; });
+        setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); },720); })
+      (p, Math.cos(ang)*dist, Math.sin(ang)*dist-16);
+    }
+  }
+  function flyScore(rect, pts, big, bonus){
+    if (!rect) return;
+    var d=document.createElement('div'); d.className='fly'; d.textContent='+'+pts;
+    d.style.fontSize=(big?40:25)+'px';
+    d.style.color = bonus ? '#FFD479' : (big ? '#FFD479' : '#EDEAF5');
+    d.style.left=(rect.left+rect.width/2-26)+'px'; d.style.top=(rect.top+rect.height/2-12)+'px';
+    document.body.appendChild(d);
+    requestAnimationFrame(function(){
+      d.style.transition='transform .95s cubic-bezier(.15,.8,.3,1), opacity .95s ease';
+      d.style.transform='translateY(-72px) scale(1.14)'; d.style.opacity='0'; });
+    setTimeout(function(){ if(d.parentNode) d.parentNode.removeChild(d); },1000);
+  }
+  function blastFx(c, r){
+    var el = boardEl.querySelector('.cell[data-c="'+c+'"][data-r="'+r+'"]');
+    var b = $('blast'); if (!el || !b) return;
+    var br = boardEl.getBoundingClientRect(), rr = el.getBoundingClientRect();
+    var size = rr.width * 3.4;
+    b.style.width = b.style.height = size + 'px';
+    b.style.left = (rr.left-br.left + rr.width/2 - size/2) + 'px';
+    b.style.top = (rr.top-br.top + rr.height/2 - size/2) + 'px';
+    b.style.opacity = '1';
+    setTimeout(function(){ b.style.opacity = '0'; }, 200);
+  }
+  function toast(text, color){
+    var t=$('toast'); t.textContent=text; t.style.color=color||'#FFD479';
+    t.classList.remove('show'); void t.offsetWidth; t.classList.add('show');
+  }
+  function shake(){ document.body.classList.remove('shake'); void document.body.offsetWidth;
+    document.body.classList.add('shake'); setTimeout(function(){ document.body.classList.remove('shake'); },340); }
+
+  /* ---------- 渲染 ---------- */
+  function blockClass(v){
+    if (v === Logic.BOMB) return ' bomb';
+    if (v === Logic.STONE) return ' stone';
+    if (v === Logic.RAINBOW) return ' rainbow';
+    return '';
+  }
+  function blockText(v){
+    if (v === Logic.BOMB) return '💣';
+    if (v === Logic.STONE) return '🧱';
+    if (v === Logic.RAINBOW) return '🌈';
+    return gemOf(v).e;
+  }
+  function blockBg(v){
+    if (v === Logic.BOMB || v === Logic.STONE || v === Logic.RAINBOW) return '';
+    return COLORS[(v-1) % COLORS.length];
+  }
+  function blockFont(v){
+    if (v === Logic.BOMB) return 20;
+    if (v === Logic.STONE) return 18;
+    if (v === Logic.RAINBOW) return 20;
+    return 22;
+  }
+  /* 把宝石图铺满格子。图未就绪时保留 emoji 兜底，不阻塞玩法。 */
+  function fillGem(el, lv){
+    el.textContent = '';
+    el.style.background = blockBg(lv);
+    if (GEM_IMG_STATE[lv] === 'ok' && GEM_IMG[lv]){
+      var im = GEM_IMG[lv].cloneNode();
+      im.style.cssText = 'width:100%;height:100%;object-fit:contain;display:block;pointer-events:none';
+      el.textContent = '';
+      el.appendChild(im);
+      el.style.background = '';   // 有图就不需要底色
+      el.style.fontSize = '';
+    } else {
+      el.textContent = gemOf(lv).e;
+      el.style.fontSize = fontOf(lv) + 'px';
+      ensureGemImg(lv);
+    }
+  }
+  function fontOf(v){ return 22; }
+
+  function buildBoard(){
+    boardEl.innerHTML = '<div id="danger"></div><div id="colHint"></div><div id="blast"></div>';
+    for (var r=0;r<Logic.ROWS;r++) for (var c=0;c<Logic.COLS;c++){
+      var d=document.createElement('div'); d.className='cell'; d.dataset.c=c; d.dataset.r=r;
+      if (c === bonusCol) d.className += ' bcol';
+      boardEl.appendChild(d);
+    }
+    var ch = $('colHead'); ch.innerHTML='';
+    for (var i=0;i<Logic.COLS;i++){
+      var h=document.createElement('div');
+      h.className='ch ' + (i===bonusCol?'bonus':'plain');
+      if (i===bonusCol) h.textContent='×2';
+      ch.appendChild(h);
+    }
+  }
+  function positionDanger(){
+    var d=$('danger'); var ref=boardEl.querySelector('.cell[data-r="1"]');
+    if (ref && d){ var br=boardEl.getBoundingClientRect(), rr=ref.getBoundingClientRect();
+      d.style.top=(rr.top-br.top+rr.height*0.4)+'px'; }
+  }
+  function render(opts){
+    opts = opts || {};
+    var popSet={}, boomSet={}, smashSet={}, bornSet={};
+    (opts.pop||[]).forEach(function(p){ popSet[p]=1; });
+    (opts.boom||[]).forEach(function(p){ boomSet[p]=1; });
+    (opts.smash||[]).forEach(function(p){ smashSet[p]=1; });
+    (opts.born||[]).forEach(function(p){ bornSet[p]=1; });
+    var dropAt = opts.dropAt;
+
+    for (var r=0;r<Logic.ROWS;r++) for (var c=0;c<Logic.COLS;c++){
+      var cell=boardEl.querySelector('.cell[data-c="'+c+'"][data-r="'+r+'"]');
+      if (!cell) continue;
+      var v=grid[Logic.idx(c,r)], existing=cell.firstChild;
+      if (v < 0){ if (existing) cell.removeChild(existing); continue; }
+      var needNew = !existing || Number(existing.dataset.lv) !== v;
+      if (needNew){
+        if (existing) cell.removeChild(existing);
+        var b=document.createElement('div');
+        b.className='blk' + blockClass(v);
+        b.dataset.lv=v;
+        var id=Logic.idx(c,r);
+        if (Logic.isNormal(v)) fillGem(b, v);
+        else { b.style.background=blockBg(v); b.style.fontSize=blockFont(v)+'px'; b.textContent = blockText(v); }
+        if (popSet[id]) b.className += ' pop';
+        else if (boomSet[id]) b.className += ' boom';
+        else if (smashSet[id]) b.className += ' smash';
+        else if (bornSet[id]) b.className += ' born';
+        else if (dropAt && dropAt.at === id){
+          b.className += ' drop';
+          b.style.setProperty('--fd', '-'+((dropAt.rows+0.6)*(cell.getBoundingClientRect().height+4))+'px');
+        }
+        cell.appendChild(b);
+      }
+    }
+    var sc=$('score');
+    if (sc.textContent !== String(score)){ sc.textContent=score; sc.classList.remove('bump'); void sc.offsetWidth; sc.classList.add('bump'); }
+    var mxl = Logic.maxLevel(grid) || 1;
+    $('best').textContent = mxl >= 1 ? gemName(mxl) : '—';
+    $('chainN').textContent = chains;
+
+    var L=level(), mv=$('moves');
+    if (L.moves > 0){
+      var left = L.moves - movesUsed;
+      mv.textContent = left; mv.className = 'v' + (left <= 5 ? ' warn' : '');
+    } else { mv.textContent='∞'; mv.className='v'; }
+
+    $('nHammer').textContent = hammerLeft;
+    $('nRefresh').textContent = refreshLeft;
+    $('nStone').textContent = Logic.countStone(grid);
+    $('toolHammer').className = 'tool' + (armed ? ' on' : '') + (hammerLeft <= 0 ? ' dead' : '');
+    $('toolRefresh').className = 'tool' + (refreshLeft <= 0 ? ' dead' : '');
+    document.body.className = armed ? 'armed' : '';
+
+    updateCombo(); updateGoal();
+    var near=false;
+    for (var cc=0;cc<Logic.COLS;cc++) if (Logic.height(grid,cc) >= Logic.ROWS-2) near=true;
+    $('danger').className = near ? 'on' : '';
+    updateNext();
+  }
+  function updateCombo(){
+    var m = mult();
+    $('comboBar').style.width = Math.min(100, (m - 1) / 2 * 100) + '%';
+    $('comboWrap').className = m >= 2 ? 'hot' : '';
+    var t = $('comboTxt');
+    if (combo === 0) t.textContent = '连击 ×1.0 · 连续合成才能涨';
+    else {
+      var tiers = ['','','🔥 ','🔥🔥 ','🔥🔥🔥 '];
+      t.textContent = (tiers[Math.min(combo,4)]||'') + '连击 ×' + m.toFixed(1) + ' · 已连续 ' + combo + ' 手';
+    }
+  }
+  function updateGoal(){
+    var g=level().goal, el=$('goalLabel');
+    if (g.k==='level') el.innerHTML = '合出一个 <span class="now">'+g.v+'</span> 级 · 现在 '+Logic.maxLevel(grid);
+    else if (g.k==='score') el.innerHTML = '拿到 <span class="now">'+g.v+'</span> 分 · 现在 '+score;
+    else if (g.k==='combo') el.innerHTML = '连击到 <span class="now">×'+g.v+'</span> · 现在 ×'+mult().toFixed(1);
+    else el.innerHTML = '触发 <span class="now">'+g.v+'</span> 次连锁 · 现在 '+chains;
+  }
+  function goalMet(){
+    var g=level().goal;
+    if (g.k==='level') return Logic.maxLevel(grid) >= g.v;
+    if (g.k==='score') return score >= g.v;
+    if (g.k==='combo') return Math.round(mult()*10) >= Math.round(g.v*10);
+    return chains >= g.v;
+  }
+  function updateNext(){
+    [[$('n1'), nextQ[0]||1, 0], [$('n2'), nextQ[1]||1, -4]].forEach(function(t){
+      var el=t[0], v=t[1], d=t[2];
+      el.className = 'nbox' + (d===0?'':' sm') + blockClass(v);
+      if (Logic.isNormal(v)){
+        el.textContent = gemOf(v).e;
+        el.style.background = blockBg(v);
+        el.style.fontSize = (blockFont(v)+d)+'px';
+        ensureGemImg(v);
+      } else {
+        el.textContent = blockText(v);
+        el.style.background = blockBg(v);
+        el.style.fontSize = (blockFont(v)+d)+'px';
+      }
+    });
+  }
+  function say(t, dim){ var m=$('msg'); m.textContent=t; m.className=dim?'dim':''; }
+
+  /* ---------- 交互 ---------- */
+  function tapColumn(col){
+    if (busy || ended) return;
+    audio();
+    if (armed){ say('先点棋盘上的方块用锤子，或再点一次🔨取消'); return; }
+    if (Logic.isFull(grid, col)){ say('这一列满了 · 换一列'); buzz(12); return; }
+
+    busy = true;
+    var val = nextQ.shift(); nextQ.push(seq());
+    var h0 = Logic.height(grid, col);
+    var d = Logic.drop(grid, col, val);
+    movesUsed++;
+    playDrop(); buzz(8);
+    render({ dropAt:{ at:d.at, rows: Logic.ROWS-1-h0 } });
+    if (val === Logic.RAINBOW) playRainbow();
+
+    setTimeout(function(){
+      if (val === Logic.BOMB){
+        var cleared = Logic.explode(grid, d.at), boomCells = [];
+        for (var i=0;i<cleared.length;i++){
+          boomCells.push(cleared[i].i);
+          burst(cellRect(cleared[i].c, cleared[i].r), '#FF6B6B', 7, 1.3);
+        }
+        blastFx(d.col, d.row);
+        playBoom(); shake(); buzz([24,50,24]);
+        toast('炸开！', '#FF8A8A');
+        render({ boom: boomCells });
+        setTimeout(afterDrop, 260);
+      } else {
+        afterDrop();
+      }
+    }, 170);
+
+    function afterDrop(){
+      var events = Logic.resolve(grid, bonusCol, mult());
+      if (events.length){
+        var popCells=[], bornCells=[], total=0, lastRect=null, anyBonus=false;
+        var newlyFound = null;
+        for (var i=0;i<events.length;i++){
+          var e = events[i];
+          popCells = popCells.concat(e.cells);
+          bornCells.push(e.at);
+          total += e.pts;
+          if (e.bonus) anyBonus = true;
+          burst(cellRect(e.col, e.row), COLORS[(e.to-1)%COLORS.length], e.to>=6?12:(e.to>=4?9:6));
+          if (i === events.length-1) lastRect = cellRect(e.col, e.row);
+          // 图鉴：首次合出这个等级就记下来，并弹出「新发现」
+          if (!codexSeen[e.to]){ codexSeen[e.to] = 1; newlyFound = e.to; save(); }
+          ensureGemImg(e.to);
+        }
+        score += total;
+        if (events.length > 1) chains++;
+        combo++;
+        if (combo > maxCombo) maxCombo = combo;
+        var topLv = events[events.length-1].to;
+        flyScore(lastRect, total, topLv>=5, anyBonus);
+        playMerge(topLv, events.length>1, anyBonus, combo);
+        if (newlyFound && newlyFound >= 3) {
+          // 新宝石比连击提示更重要 —— 这正是"想看下一个长什么样"的驱动力
+          showDiscovery(newlyFound);
+        }
+        else if (combo >= 4) { toast('连击 ×' + mult().toFixed(1) + '！', '#FFD479'); shake(); }
+        else if (topLv >= 6) { shake(); toast('漂亮', '#6FD8C8'); }
+        else if (anyBonus) { toast('双倍 ×2', '#FFD479'); }
+        say('合成出 ' + gemName(topLv) + '  +' + total + (anyBonus?'（双倍）':'') + (combo>=2?'（连击 ×'+mult().toFixed(1)+'）':''));
+        render({ pop: popCells, born: bornCells });
+        setTimeout(function(){ render(); finishTurn(); }, 270);
+      } else {
+        combo = 0;
+        say(val === Logic.BOMB ? '炸弹没有引发合成 · 连击中断'
+            : val === Logic.RAINBOW ? '彩虹落下了 · 和旁边的方块相邻就会合成'
+            : ('放下 ' + gemName(val) + ' · 没有合成，连击中断'), true);
+        render();
+        finishTurn();
+      }
+    }
+  }
+
+  /* 「新发现」弹窗 —— 玩家玩下去的核心动力之一：想知道下一个长什么样 */
+  function showDiscovery(lv){
+    var d = $('discover');
+    var g = gemOf(lv);
+    d.innerHTML = '';
+    var card = document.createElement('div');
+    card.className = 'dcard';
+    var imgWrap = document.createElement('div');
+    imgWrap.className = 'dimg';
+    if (GEM_IMG_STATE[lv] === 'ok' && GEM_IMG[lv]){
+      var im = GEM_IMG[lv].cloneNode();
+      im.style.cssText = 'width:100%;height:100%;object-fit:contain';
+      imgWrap.appendChild(im);
+    } else {
+      imgWrap.textContent = g.e;
+      imgWrap.style.fontSize = '64px';
+      imgWrap.style.background = COLORS[(lv-1)%COLORS.length];
+    }
+    var t1 = document.createElement('div'); t1.className = 'dtag'; t1.textContent = '新发现';
+    var t2 = document.createElement('div'); t2.className = 'dname'; t2.textContent = g.n;
+    var t3 = document.createElement('div'); t3.className = 'drare'; t3.textContent = g.r + ' · ' + lv + ' 级';
+    var t4 = document.createElement('div'); t4.className = 'dhint';
+    var nx = lv + 1;
+    t4.textContent = (nx <= GEMS.length) ? ('再合一次，就能看到「' + gemOf(nx).n + '」') : '你已经合出了最高级的宝石';
+    card.appendChild(t1); card.appendChild(imgWrap); card.appendChild(t2); card.appendChild(t3); card.appendChild(t4);
+    d.appendChild(card);
+    d.classList.add('show');
+    playRainbow();
+    setTimeout(function(){ d.classList.remove('show'); }, 1700);
+  }
+
+  /* 图鉴页 */
+  function openCodex(){
+    var wrap = $('codexGrid');
+    wrap.innerHTML = '';
+    for (var lv = 1; lv <= GEMS.length; lv++){
+      var g = gemOf(lv);
+      var seen = !!codexSeen[lv];
+      var cell = document.createElement('div');
+      cell.className = 'ccell' + (seen ? '' : ' locked');
+      var box = document.createElement('div');
+      box.className = 'cbox';
+      if (seen){
+        if (GEM_IMG_STATE[lv] === 'ok' && GEM_IMG[lv]){
+          var im = GEM_IMG[lv].cloneNode();
+          im.style.cssText = 'width:100%;height:100%;object-fit:contain';
+          box.appendChild(im);
+        } else {
+          box.textContent = g.e;
+          box.style.fontSize = '34px';
+          box.style.background = COLORS[(lv-1)%COLORS.length];
+          ensureGemImg(lv);
+        }
+      } else {
+        box.textContent = '?';
+        box.style.color = '#4A4566';
+        box.style.fontSize = '30px';
+      }
+      var nm = document.createElement('div');
+      nm.className = 'cname';
+      nm.textContent = seen ? g.n : '未发现';
+      var rr = document.createElement('div');
+      rr.className = 'crare';
+      rr.textContent = seen ? g.r : (lv + ' 级');
+      cell.appendChild(box); cell.appendChild(nm); cell.appendChild(rr);
+      wrap.appendChild(cell);
+    }
+    var found = 0;
+    for (var k in codexSeen) if (codexSeen[k]) found++;
+    $('codexCount').textContent = found + ' / ' + GEMS.length;
+    $('codex').classList.add('show');
+  }
+
+  /* 锤子：敲掉点击的那一格 */
+  function useHammerAt(c, r){
+    if (hammerLeft <= 0 || busy || ended) return;
+    var at = Logic.idx(c, r);
+    if (grid[at] < 0) return;
+    var wasStone = Logic.isStone(grid[at]);
+    var res = Logic.smash(grid, at);
+    if (!res) return;
+    hammerLeft--;
+    armed = false;
+    movesUsed++;          // 用道具也算一步 —— 否则道具就没有代价
+    combo = 0;            // 打断连击
+    playSmash(); buzz([14,26,14]);
+    burst(cellRect(c, r), wasStone ? '#D8D2E8' : '#FFD479', 10, 1.2);
+    toast(wasStone ? '石块敲碎了' : '敲掉了', '#FFD479');
+    say('用掉一个锤子' + (wasStone ? '（敲掉了石块）' : '') + ' · 连击中断');
+    render({ smash: [at] });
+    setTimeout(function(){ render(); finishTurn(); }, 250);
+  }
+
+  /* 换一个：丢掉当前方块 */
+  function useRefresh(){
+    if (refreshLeft <= 0 || busy || ended) return;
+    var dropped = nextQ.shift(); nextQ.push(seq());
+    refreshLeft--;
+    combo = 0;
+    playSmash(); buzz(10);
+    toast('换掉了', '#6FD8C8');
+    say('丢掉一个' + blockText(dropped) + ' · 连击中断');
+    render();
+  }
+
+  function finishTurn(){
+    busy = false;
+    render();
+    if (Logic.anyFull(grid)) return lose('有一列堆满了');
+    var L = level();
+    if (L.moves > 0 && movesUsed >= L.moves) return lose('步数用完了');
+    if (goalMet()) return win();
+    if (Logic.maxHeight(grid) >= Logic.ROWS-2) say('小心 · 快堆到顶了');
+  }
+
+  function win(){
+    ended = true;
+    if (score > bestScore) bestScore = score;
+    var gained = Math.max(5, Math.round(score/80));
+    var today = dayKey(0), bonus='';
+    if (lastDay !== today){
+      if (lastDay === dayKey(-1)){ streak++; bonus='<br>连续第 <b>'+streak+'</b> 天，星尘 +'+(streak*2); gained += streak*2; }
+      else { streak=1; bonus='<br>新的一天，连击开始'; }
+      lastDay = today;
+    }
+    dust += gained;
+    if (levelIdx + 1 > unlocked) unlocked = Math.min(levelIdx+1, Logic.LEVELS.length-1);
+    save();
+    $('overTitle').textContent = '过关！'; $('overTitle').className = 'win';
+    $('tileShow').textContent = Logic.maxLevel(grid);
+    $('tileShow').style.background = COLORS[(Logic.maxLevel(grid)-1) % COLORS.length];
+    $('finalScore').textContent = score;
+    $('cmp').innerHTML = '用了 <b>'+movesUsed+'</b> 步 · 最高连击 <b>×'+Logic.multiplierFor(maxCombo).toFixed(1)+'</b>' +
+      '<br>最高方块 <b>'+Logic.maxLevel(grid)+'</b> 级 · 星尘 <b>+'+gained+'</b>（共 '+dust+'）' + bonus;
+    $('btnNext').textContent = (levelIdx >= Logic.LEVELS.length-1) ? '全部通关 · 重玩' : '下一关';
+    $('over').classList.add('show');
+    playWin(); buzz([18,40,18,40,30]);
+  }
+
+  function lose(why){
+    ended = true;
+    if (score > bestScore) bestScore = score;
+    save();
+    $('overTitle').textContent = '没成功 · ' + why; $('overTitle').className = 'lose';
+    $('tileShow').textContent = Logic.maxLevel(grid);
+    $('tileShow').style.background = COLORS[(Logic.maxLevel(grid)-1) % COLORS.length];
+    $('finalScore').textContent = score;
+    var g = level().goal;
+    var want = g.k==='level' ? ('合出 '+g.v+' 级（差 '+(g.v-Logic.maxLevel(grid))+' 级）')
+             : g.k==='score' ? ('达到 '+g.v+' 分（差 '+Math.max(0,g.v-score)+' 分）')
+             : g.k==='combo' ? ('连击 ×'+g.v+'（现在 ×'+mult().toFixed(1)+'）')
+             : ('触发 '+g.v+' 次连锁（差 '+Math.max(0,g.v-chains)+' 次）');
+    $('cmp').innerHTML = '目标：' + want + '<br>历史最高分 <b>' + bestScore + '</b>';
+    $('btnNext').textContent = '重开本关';
+    $('over').classList.add('show');
+    playLose(); buzz([30,60,30]);
+  }
+
+  function startLevel(i){
+    levelIdx = Math.max(0, Math.min(i, Logic.LEVELS.length-1));
+    var L = level();
+    bonusCol = L.bonus; hammerLeft = L.hammer || 0; refreshLeft = L.refresh || 0;
+    armed = false;
+    seq = Logic.makeSeq(Logic.hashStr('lv' + levelIdx));
+    grid = Logic.empty();
+    Logic.placeStones(grid, L.stones || 0, Logic.hashStr('stone-lv' + levelIdx));
+    score = 0; movesUsed = 0; chains = 0; combo = 0; maxCombo = 0;
+    nextQ = [seq(), seq()];
+    busy = false; ended = false;
+    $('lvLabel').textContent = '第 ' + (levelIdx+1) + ' 关 / ' + Logic.LEVELS.length;
+    $('over').classList.remove('show');
+    $('levelPick').style.display = 'none';
+    say(L.tip, true);
+    buildBoard(); positionDanger(); render();
+  }
+
+  function openPick(){
+    var g = $('grid'); g.innerHTML='';
+    for (var i=0;i<Logic.LEVELS.length;i++){
+      (function(i){
+        var b=document.createElement('button');
+        var locked = i > unlocked;
+        b.textContent = locked ? '🔒' : String(i+1);
+        b.style.cssText = 'padding:16px 0;font-size:16px;border-radius:12px;' +
+          (locked ? 'background:#1E1C2E;color:#4A4566;box-shadow:inset 0 0 0 1px #2A2740;'
+                  : (i===levelIdx ? 'background:#FFD479;color:#141322;' : 'background:#242238;color:#EDEAF5;box-shadow:inset 0 0 0 1px #37335A;'));
+        b.disabled = locked;
+        b.onclick = function(){ startLevel(i); };
+        g.appendChild(b);
+      })(i);
+    }
+    $('levelPick').style.display = 'flex';
+  }
+
+  /* ---------- 输入 ---------- */
+  function cellFromPoint(x, y){
+    var el = document.elementFromPoint(x, y);
+    if (!el) return null;
+    var cell = el.closest ? el.closest('.cell') : null;
+    if (cell && cell.dataset.c !== undefined) return { c: Number(cell.dataset.c), r: Number(cell.dataset.r) };
+    var blk = el.closest ? el.closest('.blk') : null;
+    if (blk && blk.parentNode && blk.parentNode.dataset && blk.parentNode.dataset.c !== undefined)
+      return { c: Number(blk.parentNode.dataset.c), r: Number(blk.parentNode.dataset.r) };
+    return null;
+  }
+  function colFromPoint(x, y){
+    var cell = cellFromPoint(x, y);
+    if (cell) return cell.c;
+    var el = document.elementFromPoint(x, y);
+    var head = el && el.closest ? el.closest('.ch') : null;
+    if (head){ var i = Array.prototype.indexOf.call($('colHead').children, head); if (i >= 0) return i; }
+    return -1;
+  }
+  function showHint(col){
+    var h=$('colHint'); if (!h) return;
+    if (col < 0 || armed){ h.style.opacity = 0; return; }
+    var ref = boardEl.querySelector('.cell[data-c="'+col+'"][data-r="0"]');
+    if (!ref) return;
+    var br=boardEl.getBoundingClientRect(), rr=ref.getBoundingClientRect();
+    h.style.left=(rr.left-br.left)+'px'; h.style.width=rr.width+'px'; h.style.opacity=1;
+  }
+  var downX=0, downY=0, moved=false;
+  function onDown(e){
+    downX=e.clientX; downY=e.clientY; moved=false;
+    showHint(colFromPoint(e.clientX, e.clientY));
+  }
+  function onMove(e){
+    if (Math.abs(e.clientX-downX)>12 || Math.abs(e.clientY-downY)>12) moved=true;
+    showHint(colFromPoint(e.clientX, e.clientY));
+  }
+  function onUp(e){
+    showHint(-1);
+    if (moved) return;
+    var cell = cellFromPoint(e.clientX, e.clientY);
+    if (armed){
+      if (cell) useHammerAt(cell.c, cell.r);
+      return;
+    }
+    var c = colFromPoint(e.clientX, e.clientY);
+    if (c >= 0) tapColumn(c);
+  }
+  boardEl.addEventListener('pointerdown', onDown);
+  boardEl.addEventListener('pointermove', onMove);
+  boardEl.addEventListener('pointerup', onUp);
+  boardEl.addEventListener('pointercancel', function(){ showHint(-1); });
+  boardEl.addEventListener('pointerleave', function(){ showHint(-1); });
+  $('colHead').addEventListener('pointerdown', onDown);
+  $('colHead').addEventListener('pointermove', onMove);
+  $('colHead').addEventListener('pointerup', onUp);
+
+  $('toolHammer').addEventListener('click', function(){
+    if (hammerLeft <= 0){ toast('锤子用完了', '#FF8A8A'); return; }
+    if (busy || ended) return;
+    armed = !armed;
+    say(armed ? '锤子已举起 · 点棋盘上任意一格敲掉它' : '取消锤子', true);
+    render();
+  });
+  $('toolRefresh').addEventListener('click', useRefresh);
+  $('btnCodex').addEventListener('click', openCodex);
+  $('btnCloseCodex').addEventListener('click', function(){ $('codex').classList.remove('show'); });
+  $('btnRetry').addEventListener('click', function(){ startLevel(levelIdx); });
+  $('btnLevels').addEventListener('click', openPick);
+  $('btnClosePick').addEventListener('click', function(){ $('levelPick').style.display='none'; });
+  $('btnNext').addEventListener('click', function(){
+    if (ended && goalMet()) startLevel(Math.min(levelIdx+1, Logic.LEVELS.length-1));
+    else startLevel(levelIdx);
+  });
+  window.addEventListener('resize', positionDanger);
+  /* 图到齐后重绘一次，把 emoji 兜底换成真正的宝石图 */
+  onGemReady = function(){ if (!busy) render(); };
+
+  load();
+  window.__logic = Logic;
+  window.__startLevel = startLevel;
+  startLevel(Math.min(unlocked, Logic.LEVELS.length-1));
+})();
+</script>
+</body>
+</html>
