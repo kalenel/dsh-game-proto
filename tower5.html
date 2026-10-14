@@ -43,14 +43,18 @@
     font-size:11.5px;font-weight:900;text-shadow:0 1px 3px rgba(0,0,0,.5)}
   #comboWrap.hot #comboBar{box-shadow:0 0 14px rgba(255,212,121,.8)}
   #wrap{flex:1 1 auto;min-height:0;display:flex;flex-direction:column;justify-content:center}
-  #colHead{display:grid;grid-template-columns:repeat(6,1fr);gap:4px;padding:0 5px 4px;max-width:430px;
+  #colHead{flex:0 0 auto;display:grid;grid-template-columns:repeat(6,1fr);gap:4px;padding:0 5px 4px;max-width:430px;
     width:100%;margin:0 auto}
   .ch{height:19px;border-radius:6px;display:flex;align-items:center;justify-content:center;
     font-size:11px;font-weight:900}
   .ch.bonus{background:linear-gradient(180deg,#FFD479,#E0A83C);color:#3A2A00}
   .ch.recycle{background:linear-gradient(180deg,#6FD8C8,#3FA89A);color:#00332C}
   .ch.plain{background:transparent}
-  #board{width:100%;max-width:430px;display:grid;grid-template-columns:repeat(6,1fr);
+  /* #wrap 是 flex 列容器，装着 #colHead + #board 两个子项。
+     #board 必须显式 flex 增长，否则它只按内容高度撑开：8 行 1fr 在容器无确定高度、
+     且格子为空时全部解析为 0，整盘只剩 gap+padding = 38px（实测 430x38）。
+     flex 由视口推导，不写死像素高度。 */
+  #board{flex:1 1 auto;min-height:0;width:100%;max-width:430px;display:grid;grid-template-columns:repeat(6,1fr);
     grid-template-rows:repeat(8,1fr);gap:4px;padding:5px;border-radius:14px;background:#191728;
     box-shadow:inset 0 0 0 1px #262340;position:relative;overflow:hidden;margin:0 auto}
   .cell{border-radius:9px;background:rgba(255,255,255,.035);position:relative}
@@ -510,6 +514,8 @@
   var GEM_IMG = {};        // level -> Image（已加载才用）
   var GEM_IMG_STATE = {};  // level -> 'loading' | 'ok' | 'fail'
   function gemOf(lv){ return GEMS[Math.min(Math.max(lv,1), GEMS.length) - 1]; }
+  function gemName(lv){ return gemOf(lv).n; }
+  function gemRarity(lv){ return gemOf(lv).r; }
   /* 图片按需加载：先用 emoji + 颜色渲染，图到了自动替换 —— 首屏不卡在网络上。
      图挂了也不影响玩法，只是退回 emoji。 */
   function ensureGemImg(lv){
@@ -774,7 +780,9 @@
     $('nStone').textContent = Logic.countStone(grid);
     $('toolHammer').className = 'tool' + (armed ? ' on' : '') + (hammerLeft <= 0 ? ' dead' : '');
     $('toolRefresh').className = 'tool' + (refreshLeft <= 0 ? ' dead' : '');
-    document.body.className = armed ? 'armed' : '';
+    /* 只增删 armed，不要整体赋值 className —— 那会把 shake() 刚加上的 shake 类一起清掉，
+       消大块时的震动动画会立刻被移除。 */
+    document.body.classList.toggle('armed', !!armed);
 
     updateCombo(); updateGoal();
     var near=false;
