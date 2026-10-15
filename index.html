@@ -372,17 +372,26 @@
   .drow .bar{height:4px;border-radius:2px;background:#2A2740;margin-top:6px;overflow:hidden}
   .drow .bar i{display:block;height:100%;background:linear-gradient(90deg,#6FD8C8,#FFD479)}
   #dailyReward{text-align:center;font-size:12.5px;color:#FFD479;margin-top:14px;line-height:1.7;min-height:20px}
-  .srow{background:#1B1930;border-radius:14px;padding:13px 15px;display:flex;align-items:center;gap:12px;
+  /* 商店行样式：主题行 .srow 与祝福卡池行 .brow **共用同一套规则**（t21/R2-1 的"复用"约定）。
+     ⚠️ 为什么祝福行不直接叫 .srow：wire-e2e 的"商店面板能打开且有主题"断言数的是
+     `#shopList .srow` 的行数。若祝福行也用 .srow，那条断言会从"有主题"被悄悄放宽成
+     "有行就行"（≥4 恒成立）—— 改别人的闸门语义不在本任务范围内，所以用独立类名 + 共享规则。 */
+  .srow,.brow{background:#1B1930;border-radius:14px;padding:13px 15px;display:flex;align-items:center;gap:12px;
     box-shadow:inset 0 0 0 1px #2A2740}
   .srow.selected{box-shadow:inset 0 0 0 2px #FFD479}
-  .srow .swatch{width:34px;height:34px;border-radius:9px;flex:0 0 auto;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
-  .srow .body{flex:1 1 auto;min-width:0}
-  .srow .t{font-size:13.5px;font-weight:700;color:#EDEAF5}
-  .srow .p{font-size:11px;color:#8E88A8;margin-top:2px}
-  .srow button{flex:0 0 auto;padding:9px 14px;font-size:12.5px;border-radius:10px;width:auto;
+  .srow .swatch,.brow .swatch{width:34px;height:34px;border-radius:9px;flex:0 0 auto;box-shadow:inset 0 0 0 1px rgba(255,255,255,.18)}
+  .srow .body,.brow .body{flex:1 1 auto;min-width:0}
+  .srow .t,.brow .t{font-size:13.5px;font-weight:700;color:#EDEAF5}
+  .srow .p,.brow .p{font-size:11px;color:#8E88A8;margin-top:2px}
+  .srow button,.brow button{flex:0 0 auto;padding:9px 14px;font-size:12.5px;border-radius:10px;width:auto;
     background:#FFD479;color:#141322}
-  .srow button.owned{background:#2E6B4A;color:#DFF7E9}
-  .srow button.locked{background:#242238;color:#6B6588;box-shadow:inset 0 0 0 1px #37335A}
+  .srow button.owned,.brow button.owned{background:#2E6B4A;color:#DFF7E9}
+  .srow button.locked,.brow button.locked{background:#242238;color:#6B6588;box-shadow:inset 0 0 0 1px #37335A}
+  /* 祝福卡池段（t21/R2-1） */
+  #shopList .shopsec{display:flex;flex-direction:column;gap:2px;margin-top:10px;padding:0 3px}
+  #shopList .shopsec b{font-size:13.5px;color:#FFD479}
+  #shopList .shopsec span{font-size:11px;color:#8E88A8}
+  .brow .swatch.bless{display:flex;align-items:center;justify-content:center;font-size:18px}
   /* 玩法说明 */
   #helpPanel{position:fixed;inset:0;background:rgba(18,17,30,.985);display:none;z-index:98;
     flex-direction:column;padding:22px 16px;overflow-y:auto}
@@ -400,6 +409,54 @@
     justify-content:center;font-size:16px;font-weight:900;color:rgba(18,17,30,.6)}
   .hdemo .arrow{color:#8E88A8;font-size:15px}
   .hdemo .note{font-size:11px;color:#8E88A8}
+
+  /* ================= tower9：祝福系统 UI ================= */
+  /* 已激活祝福栏（契约 E8：横向图标条，上限 5，点击 tooltip）。
+     ⚠️ 第 6 轮 F2：**文档流内右对齐**，不是 position:fixed。
+     它曾经 fixed 在 top:8/right:10，与 header 的 .next（#n1/#n2）完全重叠
+     （n2 命中测试 81/81 全落在祝福图标上、真实鼠标点不动）→ "二选一"不可用。
+     margin-left:auto 让它贴右；:empty 时整行不占位（零祝福 = 布局与 tower8 一致）。 */
+  #blessBar{display:flex;gap:6px;margin-top:4px;margin-left:auto;justify-content:flex-end;
+    flex-wrap:nowrap;max-width:100%}
+  #blessBar:empty{display:none}
+  .bico{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+    font-size:18px;cursor:pointer;box-shadow:inset 0 0 0 1px rgba(255,255,255,.16),0 2px 8px rgba(0,0,0,.35);
+    user-select:none;-webkit-user-select:none}
+  .bico.common{background:#2A3050}
+  .bico.rare{background:#1E3A5F;box-shadow:inset 0 0 0 1px #4E8FD8,0 2px 8px rgba(0,0,0,.35)}
+  .bico.epic{background:#4A2456;box-shadow:inset 0 0 0 1px #B97BD8,0 2px 8px rgba(0,0,0,.35)}
+  #blessTip{position:fixed;z-index:95;max-width:240px;background:#1C1A2E;color:#EDEAF5;
+    border-radius:10px;padding:9px 11px;font-size:12px;line-height:1.5;display:none;
+    box-shadow:0 6px 22px rgba(0,0,0,.5),inset 0 0 0 1px #37335A}
+  #blessTip.show{display:block}
+  #blessTip b{display:block;font-size:13px;margin-bottom:2px}
+  #blessTip .brare{color:#8E88A8;font-size:11px}
+  /* 抽卡遮罩（契约 E3/E4/E5：3 选 1 + 重抽 50） */
+  #blessDraw{position:fixed;inset:0;z-index:90;display:none;align-items:center;justify-content:center;
+    flex-direction:column;background:rgba(10,9,18,.88);padding:20px}
+  #blessDraw.show{display:flex}
+  #blessDraw h2{color:#EDEAF5;margin:0 0 4px;font-size:22px}
+  #blessDraw .sub{color:#8E88A8;font-size:12px;margin-bottom:18px}
+  #blessCards{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;max-width:560px}
+  .bcard{width:150px;min-height:170px;border-radius:14px;padding:14px 12px;cursor:pointer;text-align:center;
+    display:flex;flex-direction:column;align-items:center;gap:8px;color:#EDEAF5;
+    transition:transform .12s ease;border:none}
+  .bcard:hover{transform:translateY(-4px)}
+  .bcard .bico-lg{width:52px;height:52px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:28px}
+  .bcard .bn{font-weight:800;font-size:15px}
+  .bcard .br{font-size:11px;letter-spacing:2px}
+  .bcard .be{font-size:12px;color:#C9C4DE;line-height:1.5}
+  .bcard.common{background:#262C48;box-shadow:inset 0 0 0 1px #3A4166}
+  .bcard.common .br{color:#9AA6D8}
+  .bcard.rare{background:#1C3554;box-shadow:inset 0 0 0 1px #4E8FD8}
+  .bcard.rare .br{color:#7FB8F0}
+  .bcard.epic{background:#3D2048;box-shadow:inset 0 0 0 1px #B97BD8}
+  .bcard.epic .br{color:#D9A5F0}
+  #btnBlessReroll{margin-top:20px;max-width:280px;width:100%}
+  #btnBlessReroll:disabled{opacity:.45;cursor:not-allowed}
+  /* 双管齐下：两个候选（契约 R-20）。第二个以"备选"样式呈现，可点选交换。 */
+  .nbox.alt{outline:2px dashed #6FD8C8;cursor:pointer}
+  .nbox.picked{outline:2px solid #FFD479}
 </style>
 </head>
 <body>
@@ -416,6 +473,16 @@
         <div class="nbox sm" id="n2">2</div>
       </div>
     </div>
+    <!-- tower9：已激活祝福栏（契约 E8：横向图标条、上限 5、点击出 tooltip）。
+         ⚠️ 第 6 轮 F2 修复：**必须在文档流里**，不能 position:fixed 压在右上角。
+         原实现 fixed top:8 right:10 与这里的 .next（#n1/#n2）占同一块屏幕：
+         实测 n2 矩形内 81/81 个采样点命中的都是祝福图标，真实鼠标点 n2 **不会交换**
+         —— c2_double_next 的"二选一"在真实输入路径上完全不可用（且必然发生：
+         该祝福生效时栏里至少有它自己的图标）。
+         现在它是 header 内右对齐的一行：#blessBar:empty{display:none} 保证
+         **零祝福时头部高度与 tower8 逐像素相同**（既有 26 条主闸门断言不受影响），
+         有祝福时头部自然长高、棋盘相应收缩，两者永不重叠。 -->
+    <div id="blessBar" aria-label="本局已激活的祝福"></div>
     <div class="stats">
       <div class="stat"><span class="k">分数</span><span class="v" id="score">0</span></div>
       <div class="stat"><span class="k">步数</span><span class="v" id="moves">∞</span></div>
@@ -467,6 +534,16 @@
 <div id="clutchFx"></div>
 <div id="clutchTxt">救回来了！</div>
 <div id="toast"></div>
+
+<!-- tower9：抽卡遮罩 + tooltip（祝福栏本体在 header 内，见上方 #blessBar） -->
+<div id="blessTip" role="tooltip"></div>
+<div id="blessDraw" role="dialog" aria-label="祝福三选一">
+  <h2>✨ 选择祝福</h2>
+  <div class="sub" id="blessDrawSub">三选一 · 本局生效 · 局末清空</div>
+  <div class="sub" id="blessDrawPool"></div>
+  <div id="blessCards"></div>
+  <button id="btnBlessReroll">重抽（50 星尘）</button>
+</div>
 
 <div id="over">
   <h2 id="overTitle">过关</h2>
@@ -771,6 +848,9 @@
       return dst;
     }
     function hasRule(g, n){ return !!(g && g.__rules && g.__rules.indexOf(n) >= 0); }
+    /* 祝福（tower9）：__bless 是本局激活祝福 id 数组，由表现层挂在棋盘实例上。
+       Logic 只读不写 —— 与 __rules 同一套注入模式。 */
+    function hasBless(g, id){ return !!(g && g.__bless && g.__bless.indexOf(id) >= 0); }
     function rulesOf(g){ return (g && g.__rules) ? g.__rules.slice() : []; }
     function deadAt(g, c, r){ return !!(g && g.__dead && g.__dead[idx(c,r)]); }
 
@@ -894,12 +974,28 @@
       return { at: (d.at == null ? DANGER_DEFAULT_AT : d.at), source:'object' };
     }
     /* 危险高度（"堆到几层算危险"）—— **唯一的取阈值入口**。
-       g 非空时按该盘的真实 depth 算；这样浅盘/挖空盘各自成立。 */
-    function dangerAt(g, L){
+       g 非空时按该盘的真实 depth 算；这样浅盘/挖空盘各自成立。
+
+       ⚠️ 方向铁律（第 6 轮 F1 修复，别再写反）：
+         dangerAt 返回的是**高度空间**的阈值 = dep − at。
+         所以 at 越大 → 返回值越**小** → 线在屏幕上越靠**下** → 报警越**早**。
+         "更早预警" 在高度空间里是**变小**，在 at 空间里是**变大** ——
+         两个量纲方向相反，混用必然写反（第一版就是这个错）。
+       ⚠️ atDelta 是**给祝福用的 at 侧增量入口**（c2_danger_down = +1）：
+         它和 at 走同一套 [1, dep] 钳制，所以"浅盘 + 祝福"不会算出越界的阈值，
+         也不会出现"读数钳了、阈值没钳"的两套口径。 */
+    function dangerAtWith(g, L, atDelta){
       var dep = g ? boardDepth(g) : ROWS;
-      var at = dangerCfgOf(L).at;
+      var at = dangerCfgOf(L).at + (+atDelta || 0);
       at = Math.max(1, Math.min(at, dep));          // 至少 1 层，且不超过盘深
       return Math.max(1, dep - at);
+    }
+    function dangerAt(g, L){ return dangerAtWith(g, L, 0); }
+    /* 本关"祝福后"的 at 读数（与 dangerAtWith 同一套钳制）—— 契约 R-17 的
+       可验收断言读的就是它："关卡实例 danger.at = 关卡表值（或缺省 2）+ delta"。 */
+    function dangerAtValue(g, L, atDelta){
+      var dep = g ? boardDepth(g) : ROWS;
+      return Math.max(1, Math.min(dangerCfgOf(L).at + (+atDelta || 0), dep));
     }
     function dangerAtOfLevel(i){
       var L = LEVELS[i] || LEVELS[0];
@@ -964,8 +1060,10 @@
         }
         if (set.length >= 2){
           /* 规则 noMerge1：1 级方块之间不能互相合成。
-             只拦"同级成组"（comp.length>=2）；彩虹仍可把它升成 2 级。 */
-          if (lvl === 1 && comp.length >= 2 && hasRule(g, 'noMerge1')) continue;
+             只拦"同级成组"（comp.length>=2）；彩虹仍可把它升成 2 级。
+             祝福 c2_merge1_allow（万物可合，契约 R-16）：**祝福胜**，无视 noMerge1。
+             祝福标记挂在棋盘实例的 __bless 数组上（UI 层在 startLevel 时注入）。 */
+          if (lvl === 1 && comp.length >= 2 && hasRule(g, 'noMerge1') && !hasBless(g, 'c2_merge1_allow')) continue;
           out.push({ cells: set, level: lvl });
         }
       }
@@ -1024,10 +1122,12 @@
       return ev;
     }
 
-    /* 炸弹：清空以落点为中心的 3×3（含石块与碎石），然后压实 */
+    /* 炸弹：清空以落点为中心的 3×3（含石块与碎石），然后压实。
+       祝福 c2_bomb_big（契约 R-14）：范围升为 5×5（radius 2），清除语义不变。 */
     function explode(g, at){
       var c0 = at % COLS, r0 = (at/COLS)|0, cleared = [];
-      for (var dc = -1; dc <= 1; dc++) for (var dr = -1; dr <= 1; dr++){
+      var rad = hasBless(g, 'c2_bomb_big') ? 2 : 1;
+      for (var dc = -rad; dc <= rad; dc++) for (var dr = -rad; dr <= rad; dr++){
         var c = c0 + dc, r = r0 + dr;
         if (c < 0 || c >= COLS || r < 0 || r >= ROWS) continue;
         if (g.__dead && g.__dead[idx(c,r)]) continue;      // 死格本来就空
@@ -1037,15 +1137,19 @@
       gravity(g);
       return cleared;
     }
-    /* 锤子：敲掉任意一格（石块、碎石都能敲） */
+    /* 锤子：敲掉任意一格（石块、碎石都能敲）。
+       祝福 c2_stone_soft（契约 R-15）：石块被敲后**原地变 1 级普通块**
+       （变普通块 → 不参与石块下沉；noMerge1 关仍受合成约束 —— 契约 §3 冲突清单）。
+       返回值加 soft:true 供表现层区分"软化"与"敲掉"（演出/文案不同）。 */
     function smash(g, at){
       if (at < 0 || at >= g.length) return null;
       if (g[at] < 0) return null;
       if (g.__dead && g.__dead[at]) return null;           // 死格敲不动
       var v = g[at], c = at % COLS, r = (at/COLS)|0;
-      g[at] = EMPTY;
+      var soft = isStone(v) && hasBless(g, 'c2_stone_soft');
+      g[at] = soft ? 1 : EMPTY;
       gravity(g);
-      return { i: at, v: v, c: c, r: r };
+      return { i: at, v: v, c: c, r: r, soft: soft };
     }
     function drop(g, col, value){
       if (!(col >= 0 && col < COLS)) return null;
@@ -1222,15 +1326,29 @@
       for (var i = 0; i < s.length; i++){ h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
       return h >>> 0;
     }
-    /* 序列：普通块按权重；炸弹与彩虹按固定概率插入。三个比率都是实测校准值。 */
+    /* 序列：普通块按权重；炸弹与彩虹按固定概率插入。三个比率都是实测校准值。
+       tower9：bombRateX/rainbowRateX 是祝福（c1_bomb_s / c1_rainbow_s）的概率加成，
+       缺省 0 —— 未设置时与 tower8 逐字节等价（既有测试全部跑在 0 加成上）。 */
     var BOMB_RATE = 0.06, RAINBOW_RATE = 0.05;
+    var bombRateX = 0, rainbowRateX = 0;
+    /* 祝福概率加成（百分点之和，含叠加）：total 钳制 ≤ 100%（契约 R-10 防御条款）。 */
+    function setSpecialRates(bombX, rainbowX){
+      bombRateX = Math.max(0, +bombX || 0);
+      rainbowRateX = Math.max(0, +rainbowX || 0);
+      if (BOMB_RATE + bombRateX + RAINBOW_RATE + rainbowRateX > 1){
+        /* 超限时按 炸弹:彩虹 原比例压缩加成部分（正常数值不会触发） */
+        var room = 1 - BOMB_RATE - RAINBOW_RATE, tot = bombRateX + rainbowRateX;
+        if (tot > 0){ var k = room / tot; bombRateX *= k; rainbowRateX *= k; }
+      }
+    }
+    function specialRates(){ return { bomb: BOMB_RATE + bombRateX, rainbow: RAINBOW_RATE + rainbowRateX }; }
     var W = [0.34, 0.30, 0.24, 0.12];
     function makeSeq(seed){
       var rng = mulberry32(seed);
       return function(){
         var r = rng();
-        if (r < BOMB_RATE) return BOMB;
-        if (r < BOMB_RATE + RAINBOW_RATE) return RAINBOW;
+        if (r < BOMB_RATE + bombRateX) return BOMB;
+        if (r < BOMB_RATE + bombRateX + RAINBOW_RATE + rainbowRateX) return RAINBOW;
         var x = rng(), acc = 0;
         for (var i = 0; i < W.length; i++){ acc += W[i]; if (x < acc) return i + 1; }
         return 1;
@@ -1283,11 +1401,14 @@
          与危险心跳的区分：本关危险线仍是默认，所以玩家看到的是
          **青蓝的时间条在缩**（顶部）而不是红色心跳 —— 两个信号不同色不同位。 */
       { goal:{k:'score',v:4000}, moves:60,  bonus:4,  stones:0, hammer:0, refresh:0, shape:'classic', timer:90, tip:'⏱ 限时 90 秒：倒计时只走真实时间，落子不额外扣秒 —— 但时间耗尽直接失败' },
-      /* 第 11 关：漏斗 + **危险线收紧**。漏斗两侧只有 3 层，默认危险线
+      /* 第 11 关：漏斗 + **预警线收紧**。漏斗两侧只有 3 层，默认预警线
          会让两侧一开局就报警（那是噪音）。所以两侧深列才是主体，
-         危险线设 at:3（depth8 → 第 5 层就报警），比默认早一层。
-         想逼的决策：中间那列虽然最深（8 层），但堆到第 5 层就持续报警。 */
-      { goal:{k:'level',v:5},    moves:45,  bonus:-1, stones:2, hammer:1, refresh:0, shape:'funnel', danger:{at:3}, tip:'⚠ 危险线收紧到第 5 层（默认第 6 层）—— 中间深列也不能随便堆' },
+         预警线设 at:3（depth8 → 离顶还有 3 层就开始报警），比默认早一层。
+         想逼的决策：中间那列虽然最深（8 层），但堆到「距顶 3 层」就持续报警。
+         ⚠️ 口径（第 6 轮统一）：文案一律用 **at 空间**「距顶 N 层」——
+         数字越大 = 越早/越严。别再写"危险线第 N 层"（高度口径：
+         同一个更严的配置会显示成更小的数字，与这里的方向正好相反）。 */
+      { goal:{k:'level',v:5},    moves:45,  bonus:-1, stones:2, hammer:1, refresh:0, shape:'funnel', danger:{at:3}, tip:'⚠ 预警线收紧到「距顶 3 层」（默认 2 层）—— 中间深列也不能随便堆' },
       /* 第 12 关：极浅盘 + 限时。flat4 只有 4 层，默认危险线 = 第 2 层
          （本来就喘不过气），再叠 40 秒。想逼的决策：
          **先清空间还是先冲目标** —— 这两件事在 4 层盘上会互相抢步数。 */
@@ -1303,16 +1424,16 @@
          想逼的决策：**摆 3 连锁（慢、分高）还是单合（快、0 分）**。 */
       { goal:{k:'score',v:1200}, moves:80,  bonus:-1, stones:0, hammer:1, refresh:0, shape:'classic', rules:['chainBonus'], timer:60, tip:'⚙️⏱ 连锁 ≥3 才有分 + 限时 60 秒：摆局要花时间，但单次合成得 0 分' },
       { goal:{k:'level',v:5},    moves:10,  bonus:-1, stones:0, hammer:1, refresh:1, shape:'classic', rules:['residue'], tip:'⚙️ 合成留残渣 + 只有 10 步：每次合成都会回吐一格，空间不再净赚' },
-      /* 第 19 关：危险线**放宽**到 at:1（depth8 → 第 7 层才报警）。
+      /* 第 19 关：预警线**放宽**到 at:1（depth8 → 离顶只剩 1 层才报警）。
          验收要求"有的关可以堆到接近顶部（宽松，但目标更难）"——
          这条正好是它的对照面：空间上几乎不报警，但步数卡到 12。 */
-      { goal:{k:'level',v:5},    moves:12,  bonus:-1, stones:2, hammer:2, refresh:0, shape:'stairR', rules:['stoneSink'], sinkEvery:6, danger:{at:1}, tip:'⚠ 危险线放宽到第 7 层（几乎不报警）—— 但石块每 6 步磨削一格，空间照样被吃，且只有 12 步' },
+      { goal:{k:'level',v:5},    moves:12,  bonus:-1, stones:2, hammer:2, refresh:0, shape:'stairR', rules:['stoneSink'], sinkEvery:6, danger:{at:1}, tip:'⚠ 预警线放宽到「距顶 1 层」（几乎不报警）—— 但石块每 6 步磨削一格，空间照样被吃，且只有 12 步' },
 
       /* --- 20..24 组合关：两条以上机制同时作用 --- */
       { goal:{k:'level',v:4},    moves:10,  bonus:-1, stones:0, hammer:3, refresh:1, shape:'well2', rules:['noMerge1'], tip:'⚙️ 极窄井 2 列 + 1 级不可合成：彩虹与炸弹是主要出路，只有 10 步' },
       { goal:{k:'level',v:5},    moves:16,  bonus:-1, stones:0, hammer:2, refresh:1, shape:'funnel', rules:['residue'], tip:'⚙️ 漏斗 + 合成留残渣：中间 8 层，但每次合成都会回吐一格' },
       { goal:{k:'level',v:5},    moves:30,  bonus:-1, stones:2, hammer:2, refresh:1, shape:'classic', rules:['stoneSink','residue'], sinkEvery:8, timer:60, tip:'⚙️⏱ 石块磨削 + 合成留残渣 + 限时 60 秒：三条压力同时挤你' },
-      { goal:{k:'level',v:5},    moves:18,  bonus:-1, stones:1, hammer:3, refresh:2, shape:'notch', rules:['noMerge1','residue'], danger:{at:3}, tip:'⚙️⚠ 中间挖空 + 1 级不可合成 + 留残渣 + 危险线第 5 层' },
+      { goal:{k:'level',v:5},    moves:18,  bonus:-1, stones:1, hammer:3, refresh:2, shape:'notch', rules:['noMerge1','residue'], danger:{at:3}, tip:'⚙️⚠ 中间挖空 + 1 级不可合成 + 留残渣 + 预警线距顶 3 层' },
       { goal:{k:'level',v:7},    moves:55,  bonus:-1, stones:0, hammer:3, refresh:2, shape:'taper', rules:['stoneSink','residue'], sinkEvery:8, timer:120, tip:'⚙️⏱ 终关：楔形棋盘 + 石块磨削 + 合成留残渣 + 限时 120 秒 —— 要在这儿合出 7 级' }
     ];
 
@@ -1737,6 +1858,7 @@
       isNormal: isNormal, isBomb: isBomb, isStone: isStone, isRainbow: isRainbow, isRubble: isRubble,
       isBlock: isBlock,
       scoreFor: scoreFor, multiplierFor: multiplierFor, makeSeq: makeSeq, hashStr: hashStr, LEVELS: LEVELS,
+      hasBless: hasBless, setSpecialRates: setSpecialRates, specialRates: specialRates,
       /* ---- 第 4 轮：形状 / 规则 ---- */
       SHAPES: SHAPES, RULES: RULES, shapeNorm: shapeNorm, shapeName: shapeName, shapeId: shapeId,
       shapeOf: shapeOf,
@@ -1749,7 +1871,8 @@
       /* ---- AI 实跑可达性（复核用，纯数据） ---- */
       WEIGHTS: WEIGHTS, aiRun: aiRun, aiVerifyAll: aiVerifyAll,
       /* ---- 第 5 轮：失败压力 ---- */
-      dangerCfgOf: dangerCfgOf, dangerAt: dangerAt, dangerAtOfLevel: dangerAtOfLevel,
+      dangerCfgOf: dangerCfgOf, dangerAt: dangerAt, dangerAtWith: dangerAtWith,
+      dangerAtValue: dangerAtValue, dangerAtOfLevel: dangerAtOfLevel,
       DANGER_DEFAULT_AT: DANGER_DEFAULT_AT,
       timerCfgOf: timerCfgOf, timerSecOfLevel: timerSecOfLevel,
       policyRun: policyRun, minMovesFor: minMovesFor, POLICY_NAMES: POLICY_NAMES,
@@ -1817,6 +1940,26 @@
   var levelIdx = 0, unlocked = 0, bestScore = 0, dust = 0, streak = 0, lastDay = '';
   var bonusCol = -1, hammerLeft = 0, refreshLeft = 0, armed = false;
   var seq = null, nextQ = [], busy = false, ended = false;
+  /* tower9：祝福的聚合读数（startLevel 时装载；无祝福时与 tower8 逐字节等价） */
+  var blessMovesBonus = 0, blessScoreMul = 1, blessComboBase = 1;
+  var blessFreezeUntil = 0;        /* R-18：冻结截止时刻（performance.now ms） */
+  var blessFrozenAt = 0;           /* R-18：冻结开始/上次结算时刻（0 = 不在冻结） */
+  var blessFrozenLeftMs = -1;      /* R-18：冻结开始那一刻的剩余量（-1 = 不在冻结） */
+  var blessDoublePick = false;     /* R-20：本手是否在做二选一 */
+  function blessFreezeOn(){ return blessFrozenAt > 0 && nowMs() < blessFreezeUntil; }
+  /* R-18：把冻结窗口内**已经过去**的真实时间补记到截止时刻上（幂等，可反复调用）。
+     补记量恰好等于冻结时长，所以冻结结束时玩家净得 1 秒；调用方随即能算出"没走表"的读数。
+     为什么必须补记而不是只写 `timeDeadline = now + timeLeftMs`：后者是恒等式
+     （now + (deadline − now) === deadline），看上去在冻结、实际一秒都没停 ——
+     本文件第一版就是这样，实测「冻结 1s 内读数照常递减」。 */
+  function blessFreezeCredit(){
+    if (blessFrozenAt <= 0) return 0;
+    var t = nowMs(), end = Math.min(t, blessFreezeUntil), dt = end - blessFrozenAt;
+    if (dt > 0) timeDeadline += dt;
+    if (t >= blessFreezeUntil){ blessFrozenAt = 0; blessFreezeUntil = 0; blessFrozenLeftMs = -1; }
+    else { blessFrozenAt = t; }
+    return dt;
+  }
   var $ = function(id){ return document.getElementById(id); };
   var boardEl = $('board');
   var scoreEl = $('score');
@@ -1827,7 +1970,10 @@
                   heartPeriod: 0, lastMerge: null };
 
   function level(){ return Logic.LEVELS[levelIdx]; }
-  function mult(){ return Logic.multiplierFor(combo); }
+  /* 连击倍率（含 R-12 连锁起手：起点 ×1.5；上限 ×3 不变） */
+  function mult(){ return Math.min(blessComboBase + combo * 0.5, 3); }
+  /* 本关步数预算（含 R-01/02；0 = 不限） */
+  function movesBudget(){ var m = level().moves || 0; return m > 0 ? m + blessMovesBonus : 0; }
 
   /* =====================================================================
      存档与元游戏：**全部委托给 meta.js**
@@ -1853,6 +1999,276 @@
     meta = null;
     if (window.console && console.error) console.error('meta.js 初始化失败：', e);
   }
+
+  /* =====================================================================
+     tower9 — Roguelite 祝福系统
+     =====================================================================
+     契约：docs/superpowers/specs/2026-10-15-tower9-requirements-contract.md
+       · 抽卡时机（E3）：第 3/7/11/15/19 关过关后各 1 次（关卡下标 2/6/10/14/18）
+       · 3 选 1 按稀有度权重 60/30/10（E4），候选来自 meta 卡池（E4/E6）
+       · C2 + c1_combo_s 不可重复（已激活即过滤）；C1 可重复叠加（E6）
+       · 重抽每次抽卡最多 1 次，50 星尘（E5）
+       · 局末（win/lose）activeBlessings 清空，卡池不受影响（E7）
+     应用模型（契约 §0：先关卡规则、后祝福，冲突祝福胜）：
+       · C1 数值类：Bless.fx 里的聚合读数（moves/hammer/refresh/分数倍率/概率）
+       · C2 规则类：grid.__bless 标记（Logic 读：merge1/explode/smash）
+                    + UI 层包装（彩虹续击/时间静止/双管齐下/危险线/连锁加成）
+     ===================================================================== */
+  var activeBlessings = [];            // 本局激活的祝福 id（局末清空）
+  var drawnAtLevels = {};              // 本局已触发过抽卡的关卡下标（防重开重复弹）
+  var pendingDraw = null;              // 结算面板背后的待处理抽卡 { cands, rerolled }
+  var BLESS_DRAW_LEVELS = [2, 6, 10, 14, 18];   // 第 3/7/11/15/19 关（0 基）
+  var BLESS_RARITY_W = { common: 60, rare: 30, epic: 10 };
+  var BLESS_BAR_MAX = 5;
+
+  /* 祝福行为表：20 个，每个都有可观察的行为变化（S5）。
+     cat:'c1' 可叠加；cat:'c2'（含 c1_combo_s）不可重复、激活后出候选池。
+     apply 在"激活瞬间"执行一次（概率类直接改 Logic 的概率加成）；
+     聚合读数走 Bless.fx。 */
+  var Bless = {
+    defs: {
+      /* ---- C1 数值类 ---- */
+      c1_moves_s:   { cat:'c1', icon:'👣', fx:{ moves: 5 } },
+      c1_moves_m:   { cat:'c1', icon:'🧗', fx:{ moves: 10 } },
+      c1_score_s:   { cat:'c1', icon:'✨', fx:{ scoreMul: 1.25 } },
+      c1_score_m:   { cat:'c1', icon:'💫', fx:{ scoreMul: 1.5 } },
+      c1_score_l:   { cat:'c1', icon:'👑', fx:{ scoreMul: 2 } },
+      c1_hammer_s:  { cat:'c1', icon:'🔨', fx:{ hammer: 1 } },
+      c1_hammer_m:  { cat:'c1', icon:'🧰', fx:{ hammer: 2 } },
+      c1_refresh_s: { cat:'c1', icon:'🔄', fx:{ refresh: 1 } },
+      c1_refresh_m: { cat:'c1', icon:'♻️', fx:{ refresh: 2 } },
+      c1_rainbow_s: { cat:'c1', icon:'🌈', fx:{ rainbowRate: 0.08 } },
+      c1_bomb_s:    { cat:'c1', icon:'💣', fx:{ bombRate: 0.08 } },
+      c1_combo_s:   { cat:'c2', icon:'🎬', fx:{ comboBase: 1.5 } },   // 表内标 ✘，按 C2 处理（R-12）
+      /* ---- C2 规则改写类 ---- */
+      c2_rainbow_chain: { cat:'c2', icon:'🔗', fx:{ rainbowChain: true } },
+      c2_bomb_big:      { cat:'c2', icon:'💥', fx:{ bombRadius: 2 } },   // Logic.explode 读 __bless
+      c2_stone_soft:    { cat:'c2', icon:'🧽', fx:{ stoneSoft: true } }, // Logic.smash 读 __bless
+      c2_merge1_allow:  { cat:'c2', icon:'🤝', fx:{ merge1: true } },    // Logic.mergeSets 读 __bless
+      c2_danger_down:   { cat:'c2', icon:'⚠️', fx:{ dangerDelta: 1 } },
+      c2_timer_freeze:  { cat:'c2', icon:'❄️', fx:{ timerFreeze: 1 } },
+      c2_chain_score:   { cat:'c2', icon:'⛓️', fx:{ chainScore: 1.5 } },
+      c2_double_next:   { cat:'c2', icon:'👯', fx:{ doubleNext: true } }
+    },
+    /* 元信息来自 meta.Blessings.list()（卡池的唯一真值在 meta.js） */
+    metaOf: function(id){
+      if (!meta || !meta.Blessings) return null;
+      var l = meta.Blessings.list();
+      for (var i = 0; i < l.length; i++) if (l[i].id === id) return l[i];
+      return null;
+    },
+    has: function(id){ return activeBlessings.indexOf(id) >= 0; },
+    /* 还没解锁的祝福数（t21/R2-1）：抽卡遮罩与商店都用它，保证"卡池有多大"对玩家可见 */
+    lockedCount: function(){
+      if (!meta || !meta.Blessings) return 0;
+      var l = meta.Blessings.list(), n = 0;
+      for (var i = 0; i < l.length; i++) if (!l[i].unlocked) n++;
+      return n;
+    },
+    lockedList: function(){
+      if (!meta || !meta.Blessings) return [];
+      return meta.Blessings.list().filter(function(b){ return !b.unlocked; });
+    },
+    count: function(id){
+      var n = 0; for (var i = 0; i < activeBlessings.length; i++) if (activeBlessings[i] === id) n++;
+      return n;
+    },
+    /* 聚合效果：把 activeBlessings 叠成一个 fx 对象（每关 startLevel / 结算时重算） */
+    fx: function(){
+      var fx = { moves:0, hammer:0, refresh:0, scoreMul:1, rainbowRate:0, bombRate:0,
+                 comboBase:1, rainbowChain:false, bombRadius:1, stoneSoft:false, merge1:false,
+                 dangerDelta:0, timerFreeze:0, chainScore:0, doubleNext:false };
+      for (var i = 0; i < activeBlessings.length; i++){
+        var d = Bless.defs[activeBlessings[i]]; if (!d) continue;
+        var f = d.fx;
+        if (f.moves) fx.moves += f.moves;
+        if (f.hammer) fx.hammer += f.hammer;
+        if (f.refresh) fx.refresh += f.refresh;
+        if (f.scoreMul) fx.scoreMul *= f.scoreMul;
+        if (f.rainbowRate) fx.rainbowRate += f.rainbowRate;
+        if (f.bombRate) fx.bombRate += f.bombRate;
+        if (f.comboBase && f.comboBase > fx.comboBase) fx.comboBase = f.comboBase;
+        if (f.rainbowChain) fx.rainbowChain = true;
+        if (f.bombRadius && f.bombRadius > fx.bombRadius) fx.bombRadius = f.bombRadius;
+        if (f.stoneSoft) fx.stoneSoft = true;
+        if (f.merge1) fx.merge1 = true;
+        if (f.dangerDelta) fx.dangerDelta += f.dangerDelta;
+        if (f.timerFreeze) fx.timerFreeze = Math.max(fx.timerFreeze, f.timerFreeze);
+        if (f.chainScore) fx.chainScore = Math.max(fx.chainScore, f.chainScore);
+        if (f.doubleNext) fx.doubleNext = true;
+      }
+      return fx;
+    },
+    /* 当前候选池：卡池内且（可重复 或 未激活）。
+       C2 类 + c1_combo_s 激活后即出池（E6）。 */
+    candidates: function(){
+      if (!meta || !meta.Blessings) return [];
+      var pool = meta.getBlessingPool();
+      var out = [];
+      for (var i = 0; i < pool.length; i++){
+        var id = pool[i], d = Bless.defs[id];
+        if (!d) continue;
+        if (d.cat === 'c2' && Bless.has(id)) continue;   // 不可重复 → 过滤
+        var m = Bless.metaOf(id); if (!m) continue;
+        out.push({ id: id, name: m.name, rarity: m.rarity, effect: m.effect, icon: d.icon });
+      }
+      return out;
+    },
+    /* 权重抽 3（E4：60/30/10；卡池 <3 退化为 N 选 1；抽空返回空） */
+    roll3: function(){
+      var cands = Bless.candidates();
+      var picks = [], n = Math.min(3, cands.length);
+      for (var k = 0; k < n; k++){
+        var tot = 0, i;
+        for (i = 0; i < cands.length; i++) tot += (BLESS_RARITY_W[cands[i].rarity] || 10);
+        var r = Math.random() * tot, acc = 0, idx = 0;
+        for (i = 0; i < cands.length; i++){ acc += (BLESS_RARITY_W[cands[i].rarity] || 10); if (r < acc){ idx = i; break; } }
+        picks.push(cands[idx]); cands.splice(idx, 1);
+      }
+      return picks;
+    },
+    /* 激活：挂局内数组 → 重算概率加成 → 刷新祝福栏。
+       apply 的"可观察行为变化"通过 fx 聚合 + Logic.__bless 在读数处生效。 */
+    apply: function(id){
+      var d = Bless.defs[id]; if (!d) return false;
+      if (d.cat === 'c2' && Bless.has(id)) return false;   // 双保险：不可重复
+      activeBlessings.push(id);
+      var fx = Bless.fx();
+      Logic.setSpecialRates(fx.bombRate, fx.rainbowRate);  // c1_bomb_s / c1_rainbow_s 即时生效
+      Bless.renderBar();
+      return true;
+    },
+    /* 局末清空（E7）：只清局内数组；卡池在 meta，不动 */
+    resetRun: function(){
+      blessFrozenAt = 0; blessFreezeUntil = 0; blessFrozenLeftMs = -1;   /* R-18：局末不残留冻结 */
+      if (meta && meta.Blessings) { try { meta.Blessings.reset(activeBlessings); } catch(e){} }
+      activeBlessings.length = 0;
+      drawnAtLevels = {};
+      pendingDraw = null;
+      Logic.setSpecialRates(0, 0);
+      Bless.renderBar();
+    },
+    /* ---- 祝福栏（E8）：最多 5 图标，点击弹 tooltip ---- */
+    renderBar: function(){
+      var bar = $('blessBar'); if (!bar) return;
+      bar.innerHTML = '';
+      /* 同类祝福在栏上只占一格（角标 ×n），避免 C1 叠加把 5 格挤爆 */
+      var seen = {}, order = [];
+      for (var i = 0; i < activeBlessings.length; i++){
+        var id = activeBlessings[i];
+        if (!seen[id]){ seen[id] = 1; order.push(id); } else seen[id]++;
+      }
+      var shown = order.slice(0, BLESS_BAR_MAX);
+      for (var j = 0; j < shown.length; j++){
+        (function(id, n){
+          var d = Bless.defs[id], m = Bless.metaOf(id) || {};
+          var el = document.createElement('div');
+          el.className = 'bico ' + (m.rarity || 'common');
+          el.textContent = (d && d.icon) || '❔';
+          el.dataset.bless = id;
+          if (n > 1){ el.dataset.n = '×' + n; el.title = ''; }
+          if (n > 1){ var b = document.createElement('b'); b.textContent = '×' + n;
+            b.style.cssText = 'font-size:9px;color:#FFD479;margin-left:1px'; el.appendChild(b); }
+          el.addEventListener('click', function(ev){
+            ev.stopPropagation(); Bless.toggleTip(id, el);
+          });
+          bar.appendChild(el);
+        })(shown[j], seen[shown[j]]);
+      }
+      if (order.length > BLESS_BAR_MAX){
+        var more = document.createElement('div');
+        more.className = 'bico common';
+        more.textContent = '+' + (order.length - BLESS_BAR_MAX);
+        bar.appendChild(more);
+      }
+      bar.dataset.count = String(activeBlessings.length);
+      bar.dataset.ids = activeBlessings.join(',');
+    },
+    toggleTip: function(id, anchor){
+      var tip = $('blessTip'); if (!tip) return;
+      if (tip.dataset.for === id && tip.classList.contains('show')){ tip.classList.remove('show'); tip.dataset.for=''; return; }
+      var d = Bless.defs[id], m = Bless.metaOf(id) || {};
+      tip.innerHTML = '<b>' + ((d && d.icon) || '') + ' ' + (m.name || id) + '</b>' +
+        '<span class="brare">' + (m.rarity === 'epic' ? '史诗' : m.rarity === 'rare' ? '稀有' : '普通') +
+        ' · 本局生效 ×' + Bless.count(id) + '</span><br>' + (m.effect || '');
+      tip.dataset.for = id;
+      var r = anchor.getBoundingClientRect();
+      tip.style.right = Math.max(8, window.innerWidth - r.right) + 'px';
+      tip.style.top = (r.bottom + 8) + 'px';
+      tip.classList.add('show');
+    },
+    /* ---- 抽卡（E3/E4/E5） ---- */
+    maybeDraw: function(){
+      /* 由 win() 调用：本关是抽卡关、本局还没抽过、卡池还有货 → 弹 3 选 1 */
+      if (BLESS_DRAW_LEVELS.indexOf(levelIdx) < 0) return false;
+      if (drawnAtLevels[levelIdx]) return false;
+      if (!Bless.candidates().length) return false;
+      drawnAtLevels[levelIdx] = true;
+      pendingDraw = { cands: Bless.roll3(), rerolled: false };
+      Bless.showDraw();
+      return true;
+    },
+    showDraw: function(){
+      var ov = $('blessDraw'), wrap = $('blessCards');
+      if (!ov || !wrap || !pendingDraw) return;
+      wrap.innerHTML = '';
+      pendingDraw.cands.forEach(function(c){
+        var b = document.createElement('button');
+        b.className = 'bcard ' + c.rarity;
+        b.dataset.bless = c.id;
+        b.innerHTML = '<div class="bico-lg">' + c.icon + '</div>' +
+          '<div class="bn">' + c.name + '</div>' +
+          '<div class="br">' + (c.rarity === 'epic' ? '史诗' : c.rarity === 'rare' ? '稀有' : '普通') + '</div>' +
+          '<div class="be">' + c.effect + '</div>';
+        b.addEventListener('click', function(){ Bless.pick(c.id); });
+        wrap.appendChild(b);
+      });
+      var rb = $('btnBlessReroll');
+      var canAfford = meta && meta.Blessings && (meta.getState().dust >= 50);
+      rb.disabled = pendingDraw.rerolled || !canAfford;
+      rb.textContent = pendingDraw.rerolled ? '已重抽过'
+        : canAfford ? '重抽（50 星尘）' : '星尘不足 50，无法重抽';
+      $('blessDrawSub').textContent = '第 ' + (levelIdx + 1) + ' 关通过 · 三选一 · 本局生效 · 局末清空';
+      /* t21/R2-1：卡池里还有几张没解锁，必须在这里说出来 ——
+         否则玩家永远不知道"抽来抽去就这 8 张"是因为自己没解锁（星尘商店的第二段）。 */
+      var poolHint = $('blessDrawPool');
+      if (poolHint){
+        var lockedN = Bless.lockedCount();
+        poolHint.textContent = lockedN > 0
+          ? ('卡池还有 ' + lockedN + ' 个祝福没解锁（星尘商店 → 祝福卡池）')
+          : '全部 20 个祝福都已解锁，本局候选来自整池';
+      }
+      ov.classList.add('show');
+      ov.dataset.open = '1';
+    },
+    reroll: function(){
+      if (!pendingDraw || pendingDraw.rerolled) return;
+      if (!meta || !meta.Blessings) return;
+      var r = meta.Blessings.reroll();          // E5：固定 50，不足不扣款
+      if (!r.ok){ toast('星尘不足 ' + r.cost + '，还差 ' + r.short, '#FF8A8A'); return; }
+      pendingDraw.rerolled = true;
+      pendingDraw.cands = Bless.roll3();
+      syncFromMeta();                            // 星尘读数同步
+      Bless.showDraw();
+      toast('重抽了 · 星尘 -' + r.spent, '#6FD8C8');
+    },
+    pick: function(id){
+      Bless.apply(id);
+      $('blessDraw').classList.remove('show');
+      $('blessDraw').dataset.open = '0';
+      var m = Bless.metaOf(id) || {};
+      pendingDraw = null;
+      /* 选完后才把过关结算面板亮出来 —— 结算内容不变，只是时序在后 */
+      toast('获得祝福：' + (m.name || id), '#FFD479');
+      showOverPanel();
+    }
+  };
+  /* 点别处关 tooltip */
+  document.addEventListener('pointerdown', function(e){
+    var tip = $('blessTip');
+    if (tip && tip.classList.contains('show') && !tip.contains(e.target) &&
+        !(e.target && e.target.closest && e.target.closest('#blessBar'))) tip.classList.remove('show');
+  });
 
   /* 从 meta 同步派生出来的只读视图（保持原有变量名，最小化改动面） */
   function syncFromMeta(){
@@ -1973,7 +2389,16 @@
   function nowMs(){
     return (window.performance && performance.now) ? performance.now() : Date.now();
   }
-  function timeRemainingMs(){ return Math.max(0, timeLeftMs); }
+  /* 剩余毫秒的**唯一读数入口**。
+     R-18 冻结期（第 6 轮 F6）：直接返回冻结开始那一刻记下的常量 blessFrozenLeftMs ——
+     与帧率、与采样时刻都无关。旧写法是「deadline − now + 逐帧补记」的阶梯：
+     只在帧边界严格不动，帧间隙内会回退（审查者密采样实测最大 24ms；首帧迟到时 326ms）。
+     ⚠️ 因此 t12 那句「冻结期读数波动 1ms」只在"帧后采样"这个取样方式下成立，
+     不代表读数是钉住的 —— 现在读数本身是常量，任何采样时刻都是 0 波动。 */
+  function timeRemainingMs(){
+    if (blessFrozenLeftMs >= 0 && blessFreezeOn()) return blessFrozenLeftMs;
+    return Math.max(0, timeLeftMs);
+  }
   function timeRatio(){ return timeCfg.sec > 0 ? Math.max(0, Math.min(1, timeRemainingMs() / (timeCfg.sec*1000))) : 0; }
   function paintTime(){
     var w = $('timeWrap'); if (!w) return;
@@ -2012,8 +2437,11 @@
     /* 真值 = 截止时刻 − 现在。**不是**"每帧减一点"：后者会累积漂移，
        并且在 rAF 掉帧时错误地变慢（玩家反而占了便宜）。
        spendTime() 通过把 deadline 往前挪来表达"这一步额外扣了 N 秒"。 */
-    timeLeftMs = Math.max(0, timeDeadline - nowMs());
+    /* R-18 时间静止：冻结窗口内先把这一帧真实流逝的时间补记到截止时刻，
+       于是下面的 timeLeftMs 恒等于"冻结开始那一刻"的剩余量 —— 秒表真停住。 */
+    if (blessFrozenAt > 0) blessFreezeCredit();
     var t = nowMs();
+    timeLeftMs = Math.max(0, timeDeadline - t);
     if (t - timeLastPaint >= TIME_RAF_MIN_MS){ timeLastPaint = t; paintTime(); }
     if (checkTimeOut()) return;
     timeRaf = requestAnimationFrame(tickTime);
@@ -2034,9 +2462,14 @@
     if (timeCfg.on && timeDeadline) timeLeftMs = Math.max(0, timeLeftMs);
   }
   /* 落子额外扣时间（perMove>0 的关卡才用）。把 deadline 往前挪 = 立刻少掉这些秒，
-     同时 timeLeftMs 也同步 —— 这样 tick 与"未启动 rAF 时"两种路径读数一致。 */
+     同时 timeLeftMs 也同步 —— 这样 tick 与"未启动 rAF 时"两种路径读数一致。
+     R-18：先 blessFreezeCredit() 把冻结中已流逝的部分落账，
+     否则这一笔"重算 deadline"会把顺延量整体抹掉（冻结白给）。 */
   function spendTime(sec){
     if (!timeCfg.on || !(sec > 0)) return;
+    blessFreezeCredit();
+    /* 冻结期扣时也要扣在"钉住的那个常量"上，否则读数会在冻结中途跳一下 */
+    if (blessFrozenLeftMs >= 0) blessFrozenLeftMs = Math.max(0, blessFrozenLeftMs - sec*1000);
     timeLeftMs = Math.max(0, timeLeftMs - sec*1000);
     timeDeadline = nowMs() + timeLeftMs;
     paintTime();
@@ -2452,8 +2885,18 @@
   /* 危险高度（堆到几层算危险）—— **唯一的取阈值入口**（第 5 轮改成按关卡可配）。
      以前是 depth()-2 写死，现在读关卡数据 danger:{at:N}；缺省 at=2 与旧行为逐值相等。
      ⚠️ heartParams / isClutch / positionDanger / finishTurn 的提示必须**全部**走它，
-     否则会出现"线在第 5 层、心跳按第 6 层"的错位 —— 两个信号互相矛盾。 */
-  function dangerThreshold(){ return Logic.dangerAt(grid, level()); }
+     否则会出现"线在第 5 层、心跳按第 6 层"的错位 —— 两个信号互相矛盾。
+
+     R-17 c2_danger_down（第 6 轮 F1 修复）：增量加在 **at 侧**，不是加在这个返回值上。
+       at +1 → 阈值**变小** → 线在屏幕上**下移** → 心跳**更早**触发 → 读数 at **变大**。
+     第一版写成 `Logic.dangerAt(...) + delta`（= at − 1）：线上移、报警更晚、at 读数纹丝不动，
+     方向与契约相反、断言也逐字不成立 —— 由 I11 的方向型断言 + 方向性变异 M13 钉住。 */
+  function blessAtDelta(){ return Bless.fx().dangerDelta; }
+  function dangerThreshold(){ return Logic.dangerAtWith(grid, level(), blessAtDelta()); }
+  /* 展示口径 = **at 空间**（"距顶 N 层"）：数字越大 = 越早/越严。
+     规则条与关卡 tip 必须用同一套词，否则同一件事会有两套互斥语义
+     （F1 的原始症状：tip 写"放宽到第 7 层"、规则条写"预警提前"，两边方向相反）。 */
+  function dangerAtShown(){ return Logic.dangerAtValue(grid, level(), blessAtDelta()); }
   /* 危险线位置 = 该盘"报警高度"所对应的行。
       原实现写死 data-r="1"（等价于 ROWS-2=6 层报警）；第 4 轮改成按**本关可用深度**算
       `ROWS-1-(depth-2)`；第 5 轮再改成按**可配阈值**算。
@@ -2531,8 +2974,9 @@
     $('chainN').textContent = chains;
 
     var L=level(), mv=$('moves');
-    if (L.moves > 0){
-      var left = L.moves - movesUsed;
+    var budget = movesBudget();        /* R-01/02：步数上限 = 关卡值 + 祝福加成 */
+    if (budget > 0){
+      var left = budget - movesUsed;
       mv.textContent = left; mv.className = 'v' + (left <= 5 ? ' warn' : '');
     } else { mv.textContent='∞'; mv.className='v'; }
 
@@ -2578,9 +3022,14 @@
     return chains >= g.v;
   }
   function updateNext(){
-    [[$('n1'), nextQ[0]||1, 0], [$('n2'), nextQ[1]||1, -4]].forEach(function(t){
+    /* R-20 双管齐下：激活时「下一个」给 2 个候选（点备选可与当前交换 ——
+       契约：二选一，未选的重抽不保留；交换后 nextQ 仍是 [当前, 下一个]，
+       对无祝福局的路径逐字节无影响）。 */
+    var doubleOn = Bless.fx().doubleNext;
+    var n2el = $('n2');
+    [[$('n1'), nextQ[0]||1, 0], [n2el, nextQ[1]||1, -4]].forEach(function(t){
       var el=t[0], v=t[1], d=t[2];
-      el.className = 'nbox' + (d===0?'':' sm') + blockClass(v);
+      el.className = 'nbox' + (d===0?'':' sm') + blockClass(v) + (doubleOn ? (d===0 ? ' picked' : ' alt') : '');
       if (Logic.isNormal(v)){
         el.textContent = gemOf(v).e;
         el.style.background = blockBg(v);
@@ -2592,6 +3041,15 @@
         el.style.fontSize = (blockFont(v)+d)+'px';
       }
     });
+    if (doubleOn && n2el && !n2el.__blessAltBound){
+      n2el.__blessAltBound = true;
+      n2el.addEventListener('click', function(){
+        if (!Bless.fx().doubleNext || busy || ended) return;
+        var t0 = nextQ[0]; nextQ[0] = nextQ[1]; nextQ[1] = t0;
+        toast('选了备选方块', '#6FD8C8'); updateNext();
+      });
+    }
+    if (n2el) n2el.dataset.doubleNext = doubleOn ? '1' : '0';
   }
   function say(t, dim){ var m=$('msg'); m.textContent=t; m.className=dim?'dim':''; }
 
@@ -2619,14 +3077,23 @@
     var tc = Logic.timerCfgOf(L);
     if (tc.on) tags.push({ cls:'time', txt:'⏱ 限时 ' + tc.sec + 's' + (tc.perMove > 0 ? ' 每步−' + tc.perMove + 's' : ''),
                            title:'倒计时只随真实时间流逝，落子不额外扣秒；时间耗尽即失败' });
+    /* ---- 危险线标签：**与关卡 tip 同一套词** ----
+       口径统一为 at 空间（"距顶 N 层预警"）：数字越大 = 越早/越严。
+       为什么不用"危险线第 N 层"（高度口径）：那个数字在"更严"时反而**变小**
+       （at=3 比缺省 at=2 更严，高度 5 < 6），与关卡 tip 的"收紧/放宽"两套语义互斥
+       —— F1 的原始症状正是"tip 写放宽、规则条写提前"，同一个文件里自相矛盾。 */
     var dc = Logic.dangerCfgOf(L);
-    if (dc.at !== Logic.DANGER_DEFAULT_AT){
-      var dAt = Logic.dangerAt(Logic.emptyForLevel(levelIdx), L);
-      tags.push({ cls: dc.at > Logic.DANGER_DEFAULT_AT ? 'tight' : 'loose',
-                  txt:'⚠ 危险线 ' + dAt + ' 层',
-                  title: dc.at > Logic.DANGER_DEFAULT_AT
-                    ? ('比默认更严：离顶还有 ' + dc.at + ' 层就开始报警（默认 ' + Logic.DANGER_DEFAULT_AT + ' 层）')
-                    : ('比默认更宽松：只差 ' + dc.at + ' 层才报警（默认 ' + Logic.DANGER_DEFAULT_AT + ' 层）') });
+    var blessAt = blessAtDelta();                     /* R-17：at 侧 +1 */
+    if (dc.at !== Logic.DANGER_DEFAULT_AT || blessAt > 0){
+      var atShown = dangerAtShown();
+      tags.push({ cls: atShown > Logic.DANGER_DEFAULT_AT ? 'tight' : 'loose',
+                  txt:'⚠ 距顶 ' + atShown + ' 层预警' + (blessAt > 0 ? '（祝福提前）' : ''),
+                  title: (blessAt > 0
+                    ? '祝福「危险预警」：预警线再降 1 层 → 离顶还有 ' + atShown + ' 层就报警。'
+                    : (dc.at > Logic.DANGER_DEFAULT_AT
+                        ? '比默认更严：离顶还有 ' + atShown + ' 层就开始报警。'
+                        : '比默认更宽松：只差 ' + atShown + ' 层才报警。'))
+                    + '（数字越大越早/越严；默认 ' + Logic.DANGER_DEFAULT_AT + ' 层；棋盘上的红线画在对应的那一行）' });
     }
     for (var k = 0; k < tags.length; k++){
       var el = document.createElement('div');
@@ -2644,16 +3111,32 @@
     if (busy || ended) return;
     audio();
     if (armed){ say('先点棋盘上的方块用锤子，或再点一次🔨取消'); return; }
+    /* R-18 时间静止：冻结的 1 秒内棋盘锁定（契约：冻结期不接受新落子，防刷时间） */
+    if (blessFreezeOn()){ say('❄️ 时间静止中…', true); return; }
     if (!Logic.playable(grid, col)){ say('这一列是墙 · 换一列'); buzz(12); return; }
     if (Logic.isFull(grid, col)){ say('这一列满了 · 换一列'); buzz(12); return; }
 
     busy = true;
-    var val = nextQ.shift(); nextQ.push(seq());
+    var val = nextQ.shift();
+    /* R-20 双管齐下：未选中的那个候选**不保留**（契约：另一候选被丢弃并重抽）。
+       关掉祝福时仍然是"每手只抽 1 次"，与 tower8 逐次等价。 */
+    if (Bless.fx().doubleNext) nextQ[0] = seq();
+    nextQ.push(seq());
     var h0 = Logic.height(grid, col);
     var d = Logic.drop(grid, col, val);
     if (!d){ busy = false; say('这一列满了 · 换一列'); return; }
     movesUsed++;
     playDrop(); buzz(8);
+    /* R-18 时间静止：落子瞬间冻结 1 秒（冻结期不计时 —— 顺延量由 tick 逐帧补记到 deadline；
+       冻结结束那一刻整整 1 秒落账，玩家净得 1 秒）。
+       blessFrozenLeftMs = 冻结开始那一刻的剩余量：冻结期 timeRemainingMs() 直接返回它，
+       读数与帧率/采样时刻无关（F6）。 */
+    if (Bless.fx().timerFreeze > 0 && timeCfg.on){
+      blessFrozenAt = nowMs();
+      blessFreezeUntil = blessFrozenAt + 1000;
+      blessFrozenLeftMs = Math.max(0, timeDeadline - blessFrozenAt);
+      paintTime();
+    }
     /* 掉落动画的位移量：从"列顶那一格"到落点，而不是 ROWS-1-h0 ——
        浅盘/挖空盘里列顶不在第 0 行，用 ROWS 算会让方块从棋盘外面飞进来。 */
     var seg = Logic.segOf(grid, col);
@@ -2719,7 +3202,13 @@
           }
           ensureGemImg(e.to);
         }
+        total = Math.round(total * blessScoreMul);     /* R-03/04/05：分数倍率（乘法叠加） */
         score += total;
+        /* R-19 连锁加成：连锁 ≥2 该次额外 ×1.5（与 chainBonus 先判给分、再乘 —— 契约 §3） */
+        if (events.length >= 2){
+          var csMul = Bless.fx().chainScore;
+          if (csMul > 1){ score += Math.round(total * (csMul - 1)); }
+        }
         if (events.length > 1) chains++;
         combo++;
         if (combo > maxCombo) maxCombo = combo;
@@ -2782,10 +3271,15 @@
         render({ pop: popCells, born: bornCells });
         setTimeout(function(){ render(); finishTurn(); }, 270);
       } else {
-        combo = 0;
-        say(val === Logic.BOMB ? '炸弹没有引发合成 · 连击中断'
-            : val === Logic.RAINBOW ? '彩虹落下了 · 和旁边的方块相邻就会合成'
-            : ('放下 ' + gemName(val) + ' · 没有合成，连击中断'), true);
+        /* R-13 彩虹续击：彩虹参与的一手（含它落下的瞬间）不中断连击 */
+        if (val === Logic.RAINBOW && Bless.fx().rainbowChain){
+          say('🌈 彩虹落下了 · 连击保留（彩虹续击）', true);
+        } else {
+          combo = 0;
+          say(val === Logic.BOMB ? '炸弹没有引发合成 · 连击中断'
+              : val === Logic.RAINBOW ? '彩虹落下了 · 和旁边的方块相邻就会合成'
+              : ('放下 ' + gemName(val) + ' · 没有合成，连击中断'), true);
+        }
         render();
         finishTurn();
       }
@@ -2909,7 +3403,83 @@
         list.appendChild(row);
       })(themes[i]);
     }
+    /* ---- 祝福卡池（t21/R2-1）：玩家侧**唯一**的解锁入口 ----
+       为什么必须补：在 t21 之前全文件没有任何 `meta.Blessings.unlock()` 的调用点 ——
+       契约 E2（解锁扣款/入池/持久化）、用户级场景 S3、设计 §9 DoD#6 都只在 **API 层**成立，
+       玩家永远抽不到 5 个史诗，roguelite 的"每局不同"上限被锁死在初始 8 张。
+       行结构与主题行完全一致（.srow/.body/.t/.p + button），样式与返回值约定都复用。 */
+    var locked = Bless.lockedList();
+    var sec = document.createElement('div');
+    sec.className = 'shopsec';
+    var secT = document.createElement('b'); secT.textContent = '祝福卡池';
+    var secP = document.createElement('span');
+    secP.textContent = locked.length
+      ? ('未解锁 ' + locked.length + ' 个 · 解锁后立刻进入抽卡候选池')
+      : '全部 20 个已解锁 · 抽卡候选来自整池';
+    sec.appendChild(secT); sec.appendChild(secP);
+    list.appendChild(sec);
+    if (!locked.length){
+      var done = document.createElement('div');
+      done.className = 'brow';
+      done.innerHTML = '<div class="body"><div class="t">全部已解锁</div><div class="p">20 个祝福都能在抽卡里出现</div></div>';
+      list.appendChild(done);
+    } else {
+      for (var j = 0; j < locked.length; j++){
+        list.appendChild(blessShopRow(locked[j], myDust));
+      }
+    }
     $('shopPanel').classList.add('show');
+  }
+
+  /* 祝福卡池的一行（与主题行同一套样式与"余额不足即灰化"的约定）。
+     dataset.blessId / button[data-action=unlock] 是给闸门用的稳定钩子 ——
+     闸门必须能**用真实鼠标点到这个按钮**，而不是靠内部函数名。 */
+  function blessShopRow(b, myDust){
+    var row = document.createElement('div');
+    row.className = 'brow';                       /* 与主题行 .srow 共享规则、但独立类名（见 CSS 注） */
+    row.dataset.blessId = b.id;
+    var sw = document.createElement('div');
+    sw.className = 'swatch bless';
+    sw.textContent = (Bless.defs[b.id] && Bless.defs[b.id].icon) || '✨';
+    sw.style.background = b.rarity === 'epic' ? '#4A2456' : b.rarity === 'rare' ? '#1E3A5F' : '#2A3050';
+    var body = document.createElement('div'); body.className = 'body';
+    var t = document.createElement('div'); t.className = 't';
+    t.textContent = b.name + '（' + (b.rarity === 'epic' ? '史诗' : b.rarity === 'rare' ? '稀有' : '普通') + '）';
+    var p = document.createElement('div'); p.className = 'p';
+    var afford = myDust >= b.unlockCost;
+    p.textContent = b.effect + ' · ' + b.unlockCost + ' 星尘' + (afford ? '' : '（还差 ' + (b.unlockCost - myDust) + '）');
+    body.appendChild(t); body.appendChild(p);
+    var btn = document.createElement('button');
+    btn.dataset.action = 'unlock';
+    btn.dataset.blessId = b.id;
+    if (afford){
+      btn.textContent = '解锁';
+      btn.onclick = function(){ doUnlockBlessing(b.id); };
+    } else {
+      btn.textContent = '星尘不足';
+      btn.className = 'locked';
+      btn.disabled = true;                       /* 不足即灰化（与主题行同一约定） */
+    }
+    row.appendChild(sw); row.appendChild(body); row.appendChild(btn);
+    return row;
+  }
+
+  /* 解锁一个祝福：扣款/入池/写盘全部交给 meta.Blessings.unlock()（唯一真值在 meta.js），
+     这里只负责"报告结果 + 刷新面板"。 */
+  function doUnlockBlessing(id){
+    if (!meta || !meta.Blessings) return;
+    var r = null;
+    try { r = meta.Blessings.unlock(id); } catch(e){ r = { ok:false, reason:String((e && e.message) || e) }; }
+    if (!r || r.ok === false){
+      toast(r && r.reason === 'insufficient'
+        ? ('星尘不够，还差 ' + (r.short || 0))
+        : ('解锁失败：' + ((r && r.reason) || '未知')), '#FF8A8A');
+      return;
+    }
+    var m = Bless.metaOf(id) || {};
+    toast('已解锁：' + (m.name || id) + ' 已进入抽卡候选池', '#FFD479');
+    playWin(); buzz([16,30,16]);
+    openShop();                                   /* 余额/列表/灰化一起刷新 */
   }
 
   function doBuyTheme(id){
@@ -3171,7 +3741,8 @@
        ⚠️ 默认 perMove=0 —— 倒计时只随真实时间走，与步数**各自独立**。 */
     if (timeCfg.on && timeCfg.perMove > 0) spendTime(timeCfg.perMove);
     if (timeCfg.on && timeRemainingMs() <= 0) return lose('时间用完了');
-    if (L.moves > 0 && movesUsed >= L.moves) return lose('步数用完了');
+    var mb = movesBudget();
+    if (mb > 0 && movesUsed >= mb) return lose('步数用完了');
     if (goalMet()) return win();
     /* 危险度不足时给一句提示（原来只有这一句 —— 静悄悄的一条文字，
        真正的压迫感来自 applyDanger() 的呼吸红晕与心跳音）。
@@ -3217,8 +3788,13 @@
     var tc = Logic.timerCfgOf(L);
     if (tc.on) parts.push('⏱ 限时 ' + tc.sec + 's' + (tc.perMove > 0 ? '（每步 −' + tc.perMove + 's）' : '（不扣步）'));
     var dc = Logic.dangerCfgOf(L);
-    var dAt = Logic.dangerAt(Logic.emptyForLevel(levelIdx), L);
-    if (dc.at !== Logic.DANGER_DEFAULT_AT) parts.push('⚠ 危险线 ' + dAt + ' 层（距顶 ' + dc.at + ' 层）');
+    /* 与规则条 / 关卡 tip 同一套词：at 空间（距顶 N 层），数字越大越早/越严。
+       带 R-17 时把"祝福提前了 1 层"写出来 —— 否则玩家看到结算里的数字
+       与关卡 tip 的数字对不上，会以为是 bug。 */
+    var bAt = Bless.fx().dangerDelta;
+    if (dc.at !== Logic.DANGER_DEFAULT_AT || bAt > 0){
+      parts.push('⚠ 距顶 ' + dangerAtShown() + ' 层预警' + (bAt > 0 ? '（祝福「危险预警」−1 层）' : ''));
+    }
     if (!parts.length) parts.push('标准规则');
     return '本关机制：' + parts.join(' · ');
   }
@@ -3239,6 +3815,18 @@
     if (res && res.dustFromStreak) bonus += '<br>连续打卡奖励 +' + res.dustFromStreak;
     if (res && res.dustFromDaily)  bonus += '<br>每日挑战奖励 +' + res.dustFromDaily;
     if (res && res.dailyCleared)   bonus += '<br>🎯 <b>今日挑战全部完成！</b>';
+    /* tower9：本局激活的祝福写进结算（可见、可信 —— 与 mechanicSummary 同理由） */
+    if (activeBlessings.length){
+      var bnames = [];
+      for (var bi = 0; bi < activeBlessings.length; bi++){
+        var bm = Bless.metaOf(activeBlessings[bi]) || {};
+        bnames.push((Bless.defs[activeBlessings[bi]] || {}).icon + (bm.name || activeBlessings[bi]));
+      }
+      bonus += '<br><span style="color:#D9A5F0">祝福生效：' + bnames.join(' · ') + '</span>';
+    }
+    /* 全部通关 = 一局跑完：局末清空 activeBlessings（E7） */
+    var isFinalWin = (levelIdx >= Logic.LEVELS.length - 1);
+    if (isFinalWin) Bless.resetRun();
 
     $('overTitle').textContent = '过关！'; $('overTitle').className = 'win';
     $('tileShow').textContent = Logic.maxLevel(grid);
@@ -3248,14 +3836,20 @@
       '<br>最高方块 <b>'+Logic.maxLevel(grid)+'</b> 级 · 星尘 <b>+'+gained+'</b>（共 '+dust+'）' + bonus +
       (timeCfg.on ? '<br>⏱ 剩余时间 <b>'+(timeRemainingMs()/1000).toFixed(1)+'s</b>／共 '+timeCfg.sec+'s' : '') +
       '<br><span style="color:#6FD8C8">'+mechanicSummary()+'</span>';
-    $('btnNext').textContent = (levelIdx >= Logic.LEVELS.length-1) ? '全部通关 · 重玩' : '下一关';
-    $('over').classList.add('show');
+    $('btnNext').textContent = isFinalWin ? '全部通关 · 重玩' : '下一关';
     /* 过关时清掉上一局的失败原因 —— 否则闸门读到的是**上一局**的残留值，
        典型症状："这一局明明过关了，dataset.loseReason 还是 'time'"。 */
     delete $('over').dataset.loseReason;
     delete $('over').dataset.loseBudget;
     delete $('over').dataset.loseText;
+    /* tower9：抽卡关先弹 3 选 1，结算面板等选完（Bless.pick → showOverPanel）再亮。
+       非抽卡关照常立即亮面板 —— 闸门的『over.show』读数在无祝福局完全不变。 */
+    if (!Bless.maybeDraw()) showOverPanel();
     playWin(); buzz([18,40,18,40,30]);
+  }
+  /* 结算面板亮出：从 win() 抽出来，让抽卡能插在它前面 */
+  function showOverPanel(){
+    $('over').classList.add('show');
   }
 
   function lose(why){
@@ -3263,6 +3857,7 @@
     stopTime();
     settleRun(false);
     syncFromMeta();
+    Bless.resetRun();               /* tower9 E7：局末清空局内祝福，卡池不受影响 */
     $('overTitle').textContent = '没成功 · ' + why; $('overTitle').className = 'lose';
     /* 机器可读的失败原因（给闸门用，不绑中文文案 —— 文案随时可能微调）。
        time / moves / full 三分支，与 finishTurn 里的三个 lose(...) 一一对应。
@@ -3301,7 +3896,14 @@
   function startLevel(i){
     levelIdx = Math.max(0, Math.min(i, Logic.LEVELS.length-1));
     var L = level();
-    bonusCol = L.bonus; hammerLeft = L.hammer || 0; refreshLeft = L.refresh || 0;
+    /* tower9：祝福聚合（先关卡自身数值，再叠祝福 —— 契约 §0 应用顺序） */
+    var bfx = Bless.fx();
+    bonusCol = L.bonus;
+    hammerLeft = (L.hammer || 0) + bfx.hammer;      /* R-06/07：锤子 +n */
+    refreshLeft = (L.refresh || 0) + bfx.refresh;   /* R-08/09：换一个 +n */
+    blessMovesBonus = bfx.moves;                    /* R-01/02：步数 +n（finishTurn/goalLabel 读） */
+    blessScoreMul = bfx.scoreMul;                   /* R-03/04/05：结算倍率 */
+    blessComboBase = bfx.comboBase;                 /* R-12：连击起点 ×1.5 */
     armed = false;
     /* 限时：先把上一关的倒计时停掉（否则重开瞬间旧 rAF 还会写一次读数）。
        stopTime() 必须在 ended=false 之前调用 —— 否则旧的 tick 会认为
@@ -3312,6 +3914,9 @@
        emptyForLevel 用的就是 Logic.LEVELS[i] 的 shape / rules / sinkEvery。 */
     grid = Logic.emptyForLevel(levelIdx);
     Logic.placeStones(grid, L.stones || 0, Logic.hashStr('stone-lv' + levelIdx));
+    /* tower9：把本局祝福挂到棋盘实例上 —— Logic 侧的规则改写类祝福
+       （c2_merge1_allow / c2_bomb_big / c2_stone_soft）全部读这个标记。 */
+    grid.__bless = activeBlessings.slice();
     score = 0; movesUsed = 0; chains = 0; combo = 0; maxCombo = 0;
     /* 分数滚动器也要归零 —— 否则重开时数字会从上一局的分数"滚回去"。
        同时取消在飞的 rAF，避免两局的两个滚动器互相抢写 #score。 */
@@ -3322,6 +3927,7 @@
     ($('clutchTxt')||{}).className = '';
     nextQ = [seq(), seq()];
     busy = false; ended = false;
+    blessFrozenAt = 0; blessFreezeUntil = 0; blessFrozenLeftMs = -1;   /* R-18：换关不带着上一关的冻结 */
     $('lvLabel').textContent = '第 ' + (levelIdx+1) + ' 关 / ' + Logic.LEVELS.length;
     $('over').classList.remove('show');
     delete $('over').dataset.loseReason;
@@ -3477,12 +4083,46 @@
   window.__openShop = openShop;
   window.__doBuyTheme = doBuyTheme;      // 供端到端验收走真实购买路径
   window.__doSelectTheme = doSelectTheme;
+  $('btnBlessReroll').addEventListener('click', function(){ Bless.reroll(); });
+  /* tower9：对外祝福接口（验收断言读真实状态，不是"看起来有"） */
+  window.__bless = {
+    active: function(){ return activeBlessings.slice(); },
+    fx: function(){ return Bless.fx(); },
+    defs: Bless.defs,
+    drawLevels: BLESS_DRAW_LEVELS.slice(),
+    candidates: function(){ return Bless.candidates(); },
+    /* 卡池规模（t21/R2-1）：未解锁数/未解锁清单 —— 抽卡遮罩与商店共用同一处真值 */
+    lockedCount: function(){ return Bless.lockedCount(); },
+    lockedList: function(){ return Bless.lockedList(); },
+    unlock: function(id){ return meta && meta.Blessings ? meta.Blessings.unlock(id) : null; },
+    roll3: function(){ return Bless.roll3(); },
+    apply: function(id){ return Bless.apply(id); },
+    resetRun: function(){ Bless.resetRun(); },
+    maybeDraw: function(){ return Bless.maybeDraw(); },
+    pick: function(id){ Bless.pick(id); },
+    reroll: function(){ Bless.reroll(); },
+    drawState: function(){
+      var ov = $('blessDraw');
+      return { open: ov.classList.contains('show'),
+               cards: (function(){ var a=[]; var cs=$('blessCards').children;
+                 for (var i=0;i<cs.length;i++) a.push({ id: cs[i].dataset.bless, rarity: cs[i].className.replace('bcard ','').trim() });
+                 return a; })(),
+               rerollDisabled: $('btnBlessReroll').disabled,
+               rerolled: pendingDraw ? pendingDraw.rerolled : null };
+    },
+    barState: function(){
+      var bar = $('blessBar');
+      return { count: Number(bar.dataset.count || 0), ids: (bar.dataset.ids || '').split(',').filter(Boolean),
+               icons: bar.children.length };
+    },
+    freezeActive: blessFreezeOn
+  };
   /* ---------------------------------------------------------------------
      对外测试面（给 smoke-test / run-diag / 闸门用）。
      上一轮的教训：光有"我加了 X"的说法不算证据 —— 必须能从外部读到数字。
      这里把分级/心跳/绝境逢生的**纯函数**也导出去，便于 Node 里直接单测。
      --------------------------------------------------------------------- */
-  window.__test = { round: 3, roundShape: 4, roundPressure: 5 };   // round 供旧闸门用；roundShape = 第 4 轮形状与规则；roundPressure = 第 5 轮失败压力
+  window.__test = { round: 3, roundShape: 4, roundPressure: 5, roundBless: 9 };   // roundBless = 第 9 轮祝福系统
   /* 给闸门/量具读"这一关到底是什么题"的只读接口。
      形状与规则必须是**能读出来的数据**，不能只存在于视觉上 ——
      否则"看起来不一样"与"真的是另一道题"无法区分。 */
@@ -3626,6 +4266,7 @@
     setTimeLeftMs: function(ms){
       if (!timeCfg.on) return -1;
       var v = Math.max(0, Number(ms) || 0);
+      blessFrozenAt = 0; blessFreezeUntil = 0; blessFrozenLeftMs = -1;   /* 量具显式设值时，R-18 冻结状态一并清掉 */
       timeLeftMs = v;
       timeDeadline = nowMs() + v;      // 同步截止时刻，否则下一次 tick 会把它算回去
       paintTime();
@@ -3637,10 +4278,18 @@
     expireNow: function(){ this.setTimeLeftMs(0); return !!ended; },
     isEnded: function(){ return !!ended; },
     /* ---- 危险线 ---- */
-    /* 活棋盘上求值（不用 snapshot，避免 __dead 丢失 —— 见 __gate 的注释）。 */
+    /* 活棋盘上求值（不用 snapshot，避免 __dead 丢失 —— 见 __gate 的注释）。
+       ⚠️ 读数口径（第 6 轮 F1 修复后）：
+         at       = **本关实例的 at 值**（表值 + 祝福 delta，经 [1, depth] 钳制）
+                    —— 契约 R-17 的可验收断言读的就是它。
+         atTable  = 关卡表里的 at（缺省 2），与 at 的差 = 祝福的增量。
+         line     = 高度空间的阈值（= depth − at）：**越早报警这个数越小**，
+                    c2_danger_down 会让它 −1、row +1（线在屏幕上下移）。
+       这三个量方向不同，别混用：at 变大 = 更严；line 变小 = 更严。 */
     dangerInfo: function(){
       var p = heartParams(Logic.maxHeight(grid));
-      return { at: Logic.dangerCfgOf(level()).at, line: dangerThreshold(),
+      return { at: dangerAtShown(), atTable: Logic.dangerCfgOf(level()).at,
+               line: dangerThreshold(),
                row: dangerRow(), depth: depth(),
                maxHeight: Logic.maxHeight(grid),
                on: !!p.on, level: p.level, period: p.period };
