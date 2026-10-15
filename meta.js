@@ -179,6 +179,55 @@
   // 单日满清 = 6+10+16+18 = 50，再加连胜 6*min(streak,5)
 
   /* ======================================================================
+     一·五、祝福表（tower9 Roguelite 卡池）
+     ======================================================================
+     来源：docs/superpowers/specs/2026-10-15-tower9-roguelite-blessings-design.md §3.2
+     契约：docs/superpowers/specs/2026-10-15-tower9-requirements-contract.md §1~§4
+       · 20 个祝福：C1 数值类 12 个（可叠加）+ C2 规则改写类 8 个（不可重复）
+       · 稀有度：普通 8 / 稀有 7 / 史诗 5（c1_combo_s 表内标注稀有，虽在初始池；
+         c2_rainbow_chain 第 6 轮 F4 裁决：实测近零效果 → 稀有降为普通）
+       · 解锁价：普通 0（随初始卡池直接拥有；**降级而来的普通档取 100** ——
+         它本来不在初始池里，白送会让"解锁"这条经济线凭空少一档）
+         / 稀有 200 / 史诗 400。单调性 0 < 100 < 200 < 400 保持。
+       · 重抽一次 50 星尘（BLESSING_REROLL_COST）
+       · 初始卡池（契约 E1 指定的 8 个 id，集合相等、顺序无关）：
+         c1_moves_s / c1_score_s / c1_hammer_s / c1_refresh_s /
+         c1_rainbow_s / c1_bomb_s / c2_danger_down / c1_combo_s
+     本模块只负责"卡池持久化 + 解锁/重抽经济"；抽卡时机、3 选 1、
+     局内生效由表现层/规则层实现，不在这里。
+     ====================================================================== */
+  var BLESSING_REROLL_COST = 50;
+
+  var BLESSINGS = [
+    /* ---- C1 数值类（12） ---- */
+    { id: 'c1_moves_s',   name: '充足准备', rarity: 'common', effect: '步数 +5',                          unlockCost: 0 },
+    { id: 'c1_moves_m',   name: '从容不迫', rarity: 'rare',   effect: '步数 +10',                         unlockCost: 200 },
+    { id: 'c1_score_s',   name: '小巧得分', rarity: 'common', effect: '分数 ×1.25',                       unlockCost: 0 },
+    { id: 'c1_score_m',   name: '得分专家', rarity: 'rare',   effect: '分数 ×1.5',                        unlockCost: 200 },
+    { id: 'c1_score_l',   name: '分数之王', rarity: 'epic',   effect: '分数 ×2',                          unlockCost: 400 },
+    { id: 'c1_hammer_s',  name: '备用锤子', rarity: 'common', effect: '锤子 +1',                          unlockCost: 0 },
+    { id: 'c1_hammer_m',  name: '工具箱',   rarity: 'rare',   effect: '锤子 +2',                          unlockCost: 200 },
+    { id: 'c1_refresh_s', name: '换新',     rarity: 'common', effect: '换一个 +1',                        unlockCost: 0 },
+    { id: 'c1_refresh_m', name: '焕然一新', rarity: 'rare',   effect: '换一个 +2',                        unlockCost: 200 },
+    { id: 'c1_rainbow_s', name: '彩虹眷顾', rarity: 'common', effect: '彩虹块概率 +8%',                   unlockCost: 0 },
+    { id: 'c1_bomb_s',    name: '炸弹客',   rarity: 'common', effect: '炸弹块概率 +8%',                   unlockCost: 0 },
+    { id: 'c1_combo_s',   name: '连锁起手', rarity: 'rare',   effect: '开局连击从 ×1.5 起算',             unlockCost: 200 },
+    /* ---- C2 规则改写类（8） ---- */
+    { id: 'c2_rainbow_chain', name: '彩虹续击',   rarity: 'common', effect: '彩虹方块落下且未引发合成时，不中断当前连击', unlockCost: 100 },
+    { id: 'c2_bomb_big',      name: '大范围炸弹', rarity: 'rare',   effect: '炸弹范围 3×3 → 5×5',               unlockCost: 200 },
+    { id: 'c2_stone_soft',    name: '软化石块',   rarity: 'epic',   effect: '石块可被锤子敲碎成 1 级块',         unlockCost: 400 },
+    { id: 'c2_merge1_allow',  name: '万物可合',   rarity: 'epic',   effect: '无视 noMerge1，1 级也可合成',       unlockCost: 400 },
+    { id: 'c2_danger_down',   name: '危险预警',   rarity: 'common', effect: '危险线下降 1 层（更早预警）',       unlockCost: 0 },
+    { id: 'c2_timer_freeze',  name: '时间静止',   rarity: 'epic',   effect: '限时的关，落子瞬间冻结 1 秒',       unlockCost: 400 },
+    { id: 'c2_chain_score',   name: '连锁加成',   rarity: 'rare',   effect: '连锁 ≥2 时额外 ×1.5 分',            unlockCost: 200 },
+    { id: 'c2_double_next',   name: '双管齐下',   rarity: 'epic',   effect: '每次落子后下个方块出现 2 个供选',   unlockCost: 400 }
+  ];
+
+  /* 契约 E1：新存档的初始卡池（8 个，集合语义） */
+  var INITIAL_BLESSING_POOL = ['c1_moves_s', 'c1_score_s', 'c1_hammer_s', 'c1_refresh_s',
+                               'c1_rainbow_s', 'c1_bomb_s', 'c2_danger_down', 'c1_combo_s'];
+
+  /* ======================================================================
      二、存储后端（可注入）
      ======================================================================
      localStorage 在 Node 里不存在；Safari 无痕模式下 setItem 会抛异常。
@@ -310,11 +359,13 @@
         totalScore: 0, totalDust: 0,
         dailyCleared: 0, dailyStreak: 0, lastDailyDate: ''
       },
-      daily: { date: '', progress: { level: 0, chain: 0, score: 0 }, done: {}, claimed: false }
+      daily: { date: '', progress: { level: 0, chain: 0, score: 0 }, done: {}, claimed: false },
+      blessingPool: INITIAL_BLESSING_POOL.slice()   // tower9：已解锁、可被抽取的祝福（跨局持久化）
     };
   }
 
   function isThemeId(id) { return THEMES.some(function (t) { return t.id === id; }); }
+  function isBlessingId(id) { return BLESSINGS.some(function (b) { return b.id === id; }); }
 
   /*
     修复：任何字段形状不对都就地改成合法值，**绝不抛异常**。
@@ -377,6 +428,16 @@
       }
       if (isPlainObject(raw.daily.done)) s.daily.done = raw.daily.done;
       s.daily.claimed = raw.daily.claimed === true;
+    }
+
+    /* blessingPool（tower9）：只接受"合法祝福 id"的白名单，去重、保序；
+       与 themes 同一套防线 —— 脏键/重复键若放进来，抽卡阶段会抽到不存在的祝福。 */
+    if (Array.isArray(raw.blessingPool)) {
+      var pool = [];
+      raw.blessingPool.forEach(function (id) {
+        if (isBlessingId(id) && pool.indexOf(id) < 0) pool.push(id);
+      });
+      s.blessingPool = pool;
     }
     return s;
   }
@@ -529,6 +590,55 @@
       state.theme = id;
       save();
       return { ok: true, theme: themeView(findTheme(id)) };
+    }
+
+    /* ---------- 祝福卡池（tower9） ----------
+       契约（requirements-contract §4）：
+         E1 初始卡池 = 8 个指定祝福（含赠送的稀有 c1_combo_s）
+         E2 解锁扣款 = unlockCost（稀有 200 / 史诗 400），卡池即时更新并持久化
+         E5 重抽固定 50 星尘；星尘不足不扣款
+       与主题商店同一套返回值约定：{ ok, reason, balance, ... }。 */
+    function findBlessing(id) {
+      for (var i = 0; i < BLESSINGS.length; i++) if (BLESSINGS[i].id === id) return BLESSINGS[i];
+      return null;
+    }
+    function blessingOwned(id) { return state.blessingPool.indexOf(id) >= 0; }
+    /* 视图返回隔离副本，并补上 unlocked/affordable —— 与 themeView 同理由（防就地改表） */
+    function blessingView(b) {
+      return {
+        id: b.id, name: b.name, rarity: b.rarity, effect: b.effect, unlockCost: b.unlockCost,
+        unlocked: blessingOwned(b.id),
+        affordable: state.dust >= b.unlockCost
+      };
+    }
+    function blessingsList() { return BLESSINGS.map(blessingView); }
+    function blessingUnlock(id) {
+      var b = findBlessing(id);
+      if (!b) return { ok: false, reason: 'unknown_blessing', balance: state.dust };
+      if (blessingOwned(id)) {
+        return { ok: false, reason: 'already_unlocked', balance: state.dust, blessing: blessingView(b) };
+      }
+      if (state.dust < b.unlockCost) {
+        return { ok: false, reason: 'insufficient', balance: state.dust, short: b.unlockCost - state.dust, blessing: blessingView(b) };
+      }
+      state.dust -= b.unlockCost;
+      state.blessingPool.push(id);
+      save();   // totalDust 记录"累计获得"，不因消费回退 —— 与 buyTheme 同口径
+      return { ok: true, reason: '', balance: state.dust, spent: b.unlockCost, blessing: blessingView(b) };
+    }
+    function blessingReroll() {
+      if (state.dust < BLESSING_REROLL_COST) {
+        return { ok: false, reason: 'insufficient', balance: state.dust, short: BLESSING_REROLL_COST - state.dust, cost: BLESSING_REROLL_COST };
+      }
+      state.dust -= BLESSING_REROLL_COST;
+      save();
+      return { ok: true, reason: '', balance: state.dust, spent: BLESSING_REROLL_COST, cost: BLESSING_REROLL_COST };
+    }
+    /* 局末只清游戏层传入的 activeBlessings 数组，不碰永久卡池和存档。
+       为兼容设计里的无参 reset() 写法，无数组时返回空局内态。 */
+    function blessingReset(activeBlessings) {
+      if (Array.isArray(activeBlessings)) activeBlessings.length = 0;
+      return [];
     }
 
     /* ---------- 图鉴（codexSeen） ----------
@@ -717,6 +827,8 @@
       THEMES: THEMES,
       DAILY_REWARDS: DAILY_REWARDS,
       DUST_CALIBRATION: DUST_CALIBRATION,
+      BLESSINGS: BLESSINGS,
+      BLESSING_REROLL_COST: BLESSING_REROLL_COST,
 
       /* 存档 */
       /* 注意：导出前先跑一次 dailyInternal()，让 daily.tasks 一定是补齐过的。
@@ -743,6 +855,16 @@
       isThemeOwned: function (id) { return owned(id); },
       buyTheme: buyTheme,
       selectTheme: selectTheme,
+
+      /* 祝福卡池（tower9）：Meta.Blessings.* 五个方法 */
+      Blessings: {
+        list: blessingsList,
+        isUnlocked: blessingOwned,
+        unlock: blessingUnlock,
+        reroll: blessingReroll,
+        reset: blessingReset
+      },
+      getBlessingPool: function () { return state.blessingPool.slice(); },
 
       /* 关卡 / 统计 */
       getUnlocked: function () { return state.unlocked; },
@@ -773,6 +895,9 @@
   return {
     createMeta: createMeta,
     THEMES: THEMES,
+    BLESSINGS: BLESSINGS,
+    BLESSING_REROLL_COST: BLESSING_REROLL_COST,
+    INITIAL_BLESSING_POOL: INITIAL_BLESSING_POOL.slice(),
     /* 每日挑战的候选值集合。暴露出来是为了让测试能比较"选中下标"而不是目标数值 ——
        level∈{5,6,7} 与 chain∈{2,3,4} 取值集合不相交，比数值会得到恒为 0 的
        相同率，那是测错了而不是分布好。 */
