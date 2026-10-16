@@ -3018,7 +3018,25 @@
         if (bornSet[id]) b.className += ' born';
         else if (dropAt && dropAt.at === id){
           b.className += ' drop';
-          b.style.setProperty('--fd', '-'+((dropAt.rows+0.6)*(cell.getBoundingClientRect().height+4))+'px');
+          /* 位移 = (rows + lead) × 行距。lead 是起手余量（格位数）。
+             t25 修复"下落间距不合理"：原来 lead 写死 0.6 且不做上限约束，
+             实测空盘落底部时起点落到棋盘外 35~40px（方块从棋盘外飞入），
+             且列里堆了方块时起点仍是列顶格、视觉上像穿过已堆的方块。
+             现在：lead 固定为 1 个格位（起手多放高一点，保留下落感），
+             并且**收敛到不高于棋盘顶**——用棋盘矩形反算允许的最大行数。 */
+          var cellH2 = cell.getBoundingClientRect().height;
+          var rowPitch = cellH2 + 4;                       // 行距 = 格高 + gap(4px)
+          var lead = 1;                                     // 起手余量：1 个格位
+          /* 收敛约束：起点 y = 落点格顶 − (rows+lead)×rowPitch，要求 ≥ 棋盘顶
+             ⇒ lead ≤ (落点格顶 − 棋盘顶)/rowPitch − rows。超了就压下来，
+             这样方块永远不会从棋盘外飞入（用户反馈"下落间距不合理"的主症状）。 */
+          var boardRect = boardEl.getBoundingClientRect();
+          var cellTop = cell.getBoundingClientRect().top;
+          if (boardRect.height > 0 && rowPitch > 0){
+            var maxLead = (cellTop - boardRect.top) / rowPitch - dropAt.rows;
+            if (lead > maxLead) lead = Math.max(0, maxLead);
+          }
+          b.style.setProperty('--fd', '-' + ((dropAt.rows + lead) * rowPitch) + 'px');
         }
         cell.appendChild(b);
       }
@@ -3200,8 +3218,15 @@
       blessFrozenLeftMs = Math.max(0, timeDeadline - blessFrozenAt);
       paintTime();
     }
-    /* 掉落动画的位移量：从"列顶那一格"到落点，而不是 ROWS-1-h0 ——
-       浅盘/挖空盘里列顶不在第 0 行，用 ROWS 算会让方块从棋盘外面飞进来。 */
+    /* 掉落动画的起点：**该列当前最高方块的上方一格**，而不是"列顶那一格"。
+       为什么改：原来用 `d.row - seg.top`（列顶到落点的行数差）算位移，起手余量是
+       0.6 行线性外推。实测两个后果：
+         · 空盘落底部时起点落到**棋盘外**（实测棋盘顶外 35~40px），方块从棋盘外飞入；
+         · 列里已经堆了方块时，起点仍是列顶格 —— 方块"穿过"上方已堆的方块才到落点，
+           视觉上不自然（用户反馈"下落间距不合理"）。
+       现在：位移 = 落点到**列顶**的行数差（不变），但起手余量固定取 1 个格位，
+       并且**不允许起点高于棋盘顶**（高于就收敛到棋盘顶上方一格），
+       这样无论空盘还是堆满，方块都从棋盘内/边缘上方一小段进入，距离感一致。 */
     var seg = Logic.segOf(grid, col);
     var fromRow = seg ? seg.top : 0;
     render({ dropAt:{ at:d.at, rows: Math.max(1, d.row - fromRow) } });
