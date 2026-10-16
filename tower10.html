@@ -217,9 +217,12 @@
   .cell.dead::after{content:'';position:absolute;inset:0;border-radius:9px}
   /* 形状：死格多的时候整盘压暗，让"能走的地方"更突出 */
   #board.shaped .cell.dead{opacity:.36}
-  /* 碎石（石块磨削的产物）：不可合成、不可落子，但能被炸弹/锤子清掉 */
-  .blk.rubble{background:linear-gradient(160deg,#5A5470,#332F44);color:#9A93B4;font-size:17px;
-    box-shadow:inset 0 0 0 1px #6A6480,inset 0 -2px 0 rgba(0,0,0,.3);filter:saturate(.6)}
+  /* 碎石（石块磨削的产物）：不可合成、不可落子，但能被炸弹/锤子清掉。
+     t24：字形与配色重做 —— 原来与 1 级石英**同用 🪨**、底色也接近（石英 COLORS[0] 是浅灰），
+     玩家根本分不清"这一格能不能合成"（用户原话："分不清，是石头"）。
+     现在：字形用 🕳（"被碾掉一块"），底色压深 + 提亮字形，与任何普通宝石都不撞。 */
+  .blk.rubble{background:linear-gradient(160deg,#3A3550,#1E1B2E);color:#D8D2E8;font-size:17px;
+    box-shadow:inset 0 0 0 1px #6A6480,inset 0 -2px 0 rgba(0,0,0,.45);filter:saturate(.7)}
   body.armed .cell{cursor:crosshair}
   body.armed .cell{box-shadow:inset 0 0 0 1px rgba(255,107,107,.5)}
   .blk{position:absolute;inset:0;border-radius:9px;display:flex;align-items:center;justify-content:center;
@@ -1905,7 +1908,7 @@
   /* =====================================================================
      表现层
      ===================================================================== */
-  var COLORS = ['#B9B2C8','#B07BE8','#7FD8E8','#4FC98A','#E8506B','#F0B429','#3A6BE0','#DCE8F5','#E857B8','#FFD479'];
+  var COLORS = ['#EDEAF5','#B07BE8','#7FD8E8','#4FC98A','#E8506B','#F0B429','#3A6BE0','#DCE8F5','#E857B8','#FFD479'];
   var PENTA = [1, 1.125, 1.25, 1.5, 1.6667];
 
   /*
@@ -1922,7 +1925,7 @@
     所以这里显式列出文件名，与定义一一对应。
   */
   var GEMS = [
-    { n:'石英',     f:'gem-01-quartz',        e:'🪨', r:'普通' },
+    { n:'石英',     f:'gem-01-quartz',        e:'⬜', r:'普通' },
     { n:'紫水晶',   f:'gem-02-amethyst',      e:'🔮', r:'普通' },
     { n:'海蓝宝石', f:'gem-03-aquamarine',    e:'💧', r:'少见' },
     { n:'祖母绿',   f:'gem-04-emerald',       e:'🟩', r:'少见' },
@@ -2870,7 +2873,7 @@
     if (v === Logic.BOMB) return '💣';
     if (v === Logic.STONE) return '🧱';
     if (v === Logic.RAINBOW) return '🌈';
-    if (Logic.isRubble(v)) return '🪨';
+    if (Logic.isRubble(v)) return '🕳';
     return gemOf(v).e;
   }
   function blockBg(v){
@@ -3655,7 +3658,7 @@
         '<div class="hb">石块<b>不能合成</b>，也<b>不能点</b>。它是关卡开局就摆好的障碍，' +
         '把一列<b>切成两段</b>：下段只能跟邻列横向合成，上段另起一组。<br>' +
         '清掉它只有两种办法：<b>炸弹</b>炸，或<b>锤子</b>敲。<br>' +
-        '🪨 <b>碎石</b>是「石块磨削」规则留下的产物：同样不能合成，但也能被炸/敲。<br>' +
+        '🕳 <b>碎石</b>是「石块磨削」规则留下的产物：同样不能合成，但也能被炸/敲。<br>' +
         '<span style="color:#8E88A8">底部那个「场上石块 N」只是个计数器，不是按钮。</span></div>' +
         '<div class="hdemo">' + cellHtml(Logic.STONE, '不可合成 · 只能被炸弹或锤子清除') + '</div>' +
       '</div>' +
@@ -3685,7 +3688,7 @@
         '<div class="hb">部分关卡会改规则，进入关卡时顶部会亮出标签，随时能看见：<br>' +
         '<b>🚫 1 级不可合成</b> —— 1 级之间合不了，得靠彩虹或炸弹把它升到 2 级。<br>' +
         '<b>🔗 连锁 ≥3 才有分</b> —— 一次落子引发 3 次以上连锁才计分，单次合成 0 分。<br>' +
-        '<b>🪨 石块磨削</b> —— 每若干步石块会碾碎下方方块并留下碎石，可用格越来越少。<br>' +
+        '<b>🕳 石块磨削</b> —— 每若干步石块会碾碎下方方块并留下碎石，可用格越来越少。<br>' +
         '<b>♻️ 合成留残渣</b> —— 合成后原地留一个 1 级残渣，合成不再净赚一格空间。</div>' +
       '</div>' +
 
