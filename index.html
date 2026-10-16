@@ -239,8 +239,27 @@
   @keyframes boomM{0%{transform:scale(1);filter:brightness(1)}40%{transform:scale(1.5);filter:brightness(3)}100%{transform:scale(.2);opacity:0}}
   .blk.smash{animation:smashM .3s ease forwards}
   @keyframes smashM{0%{transform:scale(1) rotate(0)}50%{transform:scale(1.25) rotate(8deg)}100%{transform:scale(.1) rotate(-16deg);opacity:0}}
+  /* 消失演出（pop / boom / smash）一律挂在**独立幽灵副本**上 —— 调用点在 render() 的 ghostFx。
+     为什么不挂在活方块上：这三个动画都是 animation-fill-mode:forwards，终点是 opacity:0，
+     而合成/爆炸/敲击之后那一格在数据层往往**仍有值**（合成产物就落在被消掉的那格里，
+     炸弹把上方方块震落到爆点格、锤子敲掉后上方方块落到同一格、石块下沉后原地留碎石）。
+     挂上去 = 那个方块被永久留在"看不见"的终态 —— 本文件修的正是这个缺陷。
+     幽灵是 body 下的 fixed 临时元素，动画结束即移除：不进数据驱动渲染，
+     也不会被 `#board .blk` 这类读数数进去（`body > .blk` 才是幽灵）。 */
+  .blk.ghost{position:fixed;pointer-events:none;z-index:8}
   .blk.born{animation:born .3s cubic-bezier(.2,1.6,.4,1)}
   @keyframes born{0%{transform:scale(.3)}60%{transform:scale(1.22)}100%{transform:scale(1)}}
+  /* 幽灵的消失动画必须**压过**源元素可能残留的 .born / .drop。
+     为什么必须写成更高特异性（0,3,0）而不是靠 classList.remove：`.blk.pop/.boom/.smash`
+     与 `.blk.born` 的特异性相同（0,2,0），同特异性时**后声明者胜** —— 这正是一处实测缺陷：
+     克隆出来的旧方块带着 born（活方块的 born 类创建后一直留着）时，幽灵实际播的是
+     "出现"动画（fill:none、终点 opacity:1），于是"上一手产物再被消掉"这条最常见的路径上，
+     消失演出被换成了出现动画，而且 w=h≈17px 的旧宝石会盖在新产物上把整段演完。
+     ghostFx() 里已经摘掉 drop/born（第一道），这里再把三条消失规则重声明一次（第二道）：
+     只要类名里同时出现 born 与 pop/boom/smash，生效的一定是消失动画。 */
+  .blk.ghost.pop{animation:popM .24s ease forwards}
+  .blk.ghost.boom{animation:boomM .3s ease forwards}
+  .blk.ghost.smash{animation:smashM .3s ease forwards}
   #blast{position:absolute;border-radius:50%;pointer-events:none;z-index:6;
     background:radial-gradient(circle,rgba(255,140,120,.85),rgba(255,90,90,0) 70%);opacity:0;transition:opacity .1s}
   #danger{position:absolute;left:5px;right:5px;height:2px;
@@ -2710,6 +2729,43 @@
     b.style.opacity = '1';
     setTimeout(function(){ b.style.opacity = '0'; }, 200);
   }
+  /* 消失演出的幽灵副本：把**即将被移除/重建的那份视觉**克隆一份，在 body 上播完
+     消失动画后自行移除。跟着 burst()/flyScore() 的既有约定：fixed 定位挂 body、定时自毁。
+
+     ⚠️ 为什么必须有它（本文件唯一的行为修复）：
+       pop / boom / smash 三个 keyframes 都是 animation-fill-mode:forwards，终点
+       opacity:0 / scale(.1)。而 render(opts) 收到 pop/boom/smash 时，数据层那一格
+       往往**仍然有值**：合成产物落在被消掉的组合格里（e.at ∈ e.cells）、
+       炸弹把上方方块震落进爆点格、锤子/石块下沉之后原地又出现方块或碎石。
+       原实现把这些类挂在"重建出来的那个活方块"上，于是：
+         ① 终点 opacity:0 被 forwards 永久保留；
+         ② 270ms 后那次 render() 因为 dataset.lv 已经是新值、图已缓存
+            （dataset.hyd === '1'）而 needNew=false，不会重建它；
+       ⇒ 数据层有值、屏幕上永久看不见。把演出交给幽灵、把可见性留给数据方块，
+         两条路径就再也不会互相污染：幽灵演完即销毁，活方块永远是数据的样子。 */
+  function ghostFx(src, cls){
+    if (!src || !src.classList || !src.classList.contains('blk')) return;
+    var rr = src.getBoundingClientRect();
+    if (!(rr.width > 0 && rr.height > 0)) return;      // 没有可见尺寸就没什么可演的
+    var g = src.cloneNode(true);
+    /* 两个"活方块寿命类"的表演类都要摘掉，不只是 drop：
+       drop=落下登场、born=合成产物弹入 —— 它们描述的是"这一格刚出现"，而幽灵演的是"这一格没了"。
+       活方块的 born 是**永久保留**的（`b.className += ' born'` 之后没有任何地方移除），
+       所以"上一手合成产物再被消掉"时克隆出来的幽灵会带着 born；
+       而 `.blk.born` 与 `.blk.pop/.boom/.smash` 特异性相同且声明在后 ⇒ 幽灵会播成"出现"动画。
+       这里摘掉是**第一道**（幽灵不再背着这两个类），CSS 里 `.blk.ghost.pop/boom/smash`
+       的高特异性重声明是第二道 —— 两道合起来，"幽灵播错动画"这条路彻底堵死。 */
+    g.classList.remove('drop', 'born');
+    g.classList.add('ghost');
+    g.className += cls;                                // ' pop' / ' boom' / ' smash'
+    g.style.left = rr.left + 'px'; g.style.top = rr.top + 'px';
+    g.style.width = rr.width + 'px'; g.style.height = rr.height + 'px';
+    g.style.right = 'auto'; g.style.bottom = 'auto';   // 压掉 .blk 的 inset:0
+    document.body.appendChild(g);
+    var kill = function(){ if (g.parentNode) g.parentNode.removeChild(g); };
+    g.addEventListener('animationend', kill);
+    setTimeout(kill, 400);                             // 兜底：动画被禁用/打断也不残留
+  }
   function toast(text, color){
     var t=$('toast'); t.textContent=text; t.style.color=color||'#FFD479';
     t.classList.remove('show'); void t.offsetWidth; t.classList.add('show');
@@ -2924,8 +2980,13 @@
       if (Logic.deadAt(grid, c, r)) continue;          // 死格不画方块
       var cell=boardEl.querySelector('.cell[data-c="'+c+'"][data-r="'+r+'"]');
       if (!cell) continue;
-      var v=grid[Logic.idx(c,r)], existing=cell.firstChild;
-      if (v < 0){ if (existing) cell.removeChild(existing); continue; }
+      var id=Logic.idx(c,r), v=grid[id], existing=cell.firstChild;
+      /* 这一格这一次数据变化要不要演"消失"：pop/boom/smash 一律只作用于**旧的那份视觉**。
+         下面两个出口分别覆盖"被消掉（v<0）"与"被重建（needNew）"两种情况 ——
+         不变的那份视觉（needNew=false 且 v>=0）不演，否则会在原地演一场
+         "方块消失了但还看得见"的假戏。 */
+      var fade = popSet[id] ? ' pop' : boomSet[id] ? ' boom' : smashSet[id] ? ' smash' : '';
+      if (v < 0){ if (existing){ if (fade) ghostFx(existing, fade); cell.removeChild(existing); } continue; }
       /* 重建判据 —— 这里修的是「新等级宝石永久残留 emoji」的既有缺陷。
          原判据只比等级：
              var needNew = !existing || Number(existing.dataset.lv) !== v;
@@ -2942,17 +3003,16 @@
       var imgReady = Logic.isNormal(v) && GEM_IMG_STATE[v] === 'ok' && !!GEM_IMG[v];
       var needNew = lvChanged || (!LEGACY_RENDER && imgReady && existing.dataset.hyd !== '1');
       if (needNew){
-        if (existing) cell.removeChild(existing);
+        if (existing){ if (fade) ghostFx(existing, fade); cell.removeChild(existing); }
         var b=document.createElement('div');
         b.className='blk' + blockClass(v);
         b.dataset.lv=v;
-        var id=Logic.idx(c,r);
         if (Logic.isNormal(v)) fillGem(b, v);
         else { b.style.background=blockBg(v); b.style.fontSize=blockFont(v)+'px'; b.textContent = blockText(v); }
-        if (popSet[id]) b.className += ' pop';
-        else if (boomSet[id]) b.className += ' boom';
-        else if (smashSet[id]) b.className += ' smash';
-        else if (bornSet[id]) b.className += ' born';
+        /* ⚠️ 消失类（pop/boom/smash）**不能**挂在这个刚建出来的活方块上（见 ghostFx 注释），
+           这里只剩"新方块怎么登场"：合成的产物拿 born（它本来就被 popSet 压着，永远轮不到），
+           落下的方块拿 drop。 */
+        if (bornSet[id]) b.className += ' born';
         else if (dropAt && dropAt.at === id){
           b.className += ' drop';
           b.style.setProperty('--fd', '-'+((dropAt.rows+0.6)*(cell.getBoundingClientRect().height+4))+'px');
