@@ -132,6 +132,9 @@
   .nbox.sm{width:25px;height:25px;font-size:12px;border-radius:7px;opacity:.75}
   .nbox.bomb{background:#2A2740;color:#FF8A8A;box-shadow:inset 0 0 0 2px #FF6B6B}
   .nbox.rainbow{background:linear-gradient(135deg,#FF6B6B,#FFD479,#7FD87F,#6FD8C8,#8B7BF7);color:#fff}
+  .nbox.drill{background:#8A6238;color:#FFD479;box-shadow:inset 0 0 0 2px #C89B5A}
+  .nbox.magnet{background:#C0392B;color:#FFE9E6;box-shadow:inset 0 0 0 2px #E86B5A}
+  .nbox.split{background:#2E7D8F;color:#DFF6FB;box-shadow:inset 0 0 0 2px #5BC0D4}
   .stats{display:flex;gap:12px;margin-top:5px;align-items:flex-end}
   .stat{display:flex;flex-direction:column;gap:0}
   .stat .k{font-size:9px;letter-spacing:.06em;color:#8E88A8;text-transform:uppercase}
@@ -232,6 +235,14 @@
     box-shadow:inset 0 0 0 2px #FF6B6B,inset 0 -3px 0 rgba(0,0,0,.3)}
   .blk.stone{background:linear-gradient(160deg,#6A6480,#413C55);color:#D8D2E8;font-size:18px;
     box-shadow:inset 0 0 0 2px #847CA0,inset 0 -3px 0 rgba(0,0,0,.35)}
+  /* 第 6 轮 C3 三元素：各自的样式类（blockClass 返回的类名必须在这里有对应规则，
+     否则会落到 .blk 的默认底色上 —— "数据层有值、屏幕上认不出"）。 */
+  .blk.drill{background:linear-gradient(160deg,#8A6238,#3E2C1C);color:#FFD479;
+    box-shadow:inset 0 0 0 2px #C89B5A,inset 0 -3px 0 rgba(0,0,0,.35)}
+  .blk.magnet{background:linear-gradient(160deg,#C0392B,#6E1F18);color:#FFE9E6;
+    box-shadow:inset 0 0 0 2px #E86B5A,inset 0 -3px 0 rgba(0,0,0,.35)}
+  .blk.split{background:linear-gradient(160deg,#2E7D8F,#163F4A);color:#DFF6FB;
+    box-shadow:inset 0 0 0 2px #5BC0D4,inset 0 -3px 0 rgba(0,0,0,.35)}
   .blk.rainbow{background:linear-gradient(135deg,#FF6B6B,#FFD479,#7FD87F,#6FD8C8,#8B7BF7);
     color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.45)}
   .blk.drop{animation:fallIn .16s ease-in}
@@ -694,6 +705,11 @@
        ===================================================================== */
     var COLS = 6, ROWS = 8;
     var EMPTY = -1, BOMB = 0, STONE = 100, RAINBOW = 101, RUBBLE = 102;
+    /* ---- 第 6 轮（tower11）：C3 新元素类（定向炸弹 / 磁铁块 / 分裂块） ----
+       契约 docs/superpowers/specs/2026-10-17-tower11-c3-elements-contract.md §0.2。
+       新哨兵值必须 > 102 且彼此不同：1..99 是普通块（isNormal），100/101/102 已被占用。
+       放错区间会让 isNormal / isStone / isRainbow / isRubble 全部误判（A21-7/A22-9/A23-9 看守）。 */
+    var DRILL = 103, MAGNET = 104, SPLIT = 105;
 
     var idx = function(c, r){ return r * COLS + c; };
     var isNormal = function(v){ return v >= 1 && v <= 99; };
@@ -702,6 +718,12 @@
     var isRainbow = function(v){ return v === RAINBOW; };
     var isRubble = function(v){ return v === RUBBLE; };
     var isBlock = function(v){ return v >= 0; };      // 占格的东西（含石块/彩虹/碎石）
+    /* 第 6 轮 C3 三元素（契约 §0.2）：三者都是**触发器**，不是普通块 ——
+       G6：isNormal 为假 ⇒ 不参与合成、不被磁铁吸、不被分裂。 */
+    var isDrill  = function(v){ return v === DRILL;  };
+    var isMagnet = function(v){ return v === MAGNET; };
+    var isSplit  = function(v){ return v === SPLIT;  };
+    var isSpecial = function(v){ return v === DRILL || v === MAGNET || v === SPLIT; };
 
     /* ---------- 形状表（数据驱动） ---------- */
     var SHAPES = {
@@ -1173,6 +1195,110 @@
       gravity(g);
       return { i: at, v: v, c: c, r: r, soft: soft };
     }
+    /* =====================================================================
+       第 6 轮：C3 三元素（契约 R-21 / R-22 / R-23）
+       ---------------------------------------------------------------------
+       三者与既有 explode 同构：纯盘面变换 + 恰好一次 gravity。
+       G7：触发后自身格一定被释放（不留永久残留）。
+       G9：自身不给分（pts 贡献 0）—— 连锁由后续 resolve 结算。
+       ===================================================================== */
+
+    /* --- R-21 定向炸弹 DRILL ⛏️：清除**本列落点及其下方**（含石块/碎石） ---
+       与炸弹的关键区别：炸弹清"以落点为中心的 3×3/5×5"，DRILL 清"同一列的落点及以下"，
+       **一列都不越界**（A21-2 断言 cleared 的列集合恒为单列）。
+       R-21.6：c2_bomb_big **对 DRILL 无操作** —— DRILL 不是"更大范围的炸弹"，
+                而是另一条轴向的清除；若让它吃 5×5，本轮新增的决策维度就消失了。 */
+    function drill(g, at){
+      var c = at % COLS, row = (at / COLS) | 0;
+      var seg = segOf(g, c);
+      var cleared = [];
+      if (seg){
+        /* 落点行之上不可能有块（gravity 保证每列自段底向上连续），
+           但这里仍按"逐格判 g>=0"写，不依赖那个可达状态的性质（契约 §3 的警告）。 */
+        for (var r = row; r <= seg.bottom; r++){
+          var i = idx(c, r);
+          if (g[i] >= 0){ cleared.push({ i:i, v:g[i], c:c, r:r }); g[i] = EMPTY; }
+        }
+      }
+      gravity(g);
+      return { at:at, col:c, row:row, cleared:cleared };
+    }
+
+    /* --- R-22 磁铁块 MAGNET 🧲：把左右邻列**最顶部的普通块**各吸一格到本列 ---
+       pullCap = 本列落点行**以上**的空格数（不含落点格本身，那是 MAGNET 自己占的）。
+       pullCap = 0 ⇒ 一个都吸不动（这就是"本列已满/空间不足"的定义）。
+       只吸 isNormal：石块 / 碎石 / 炸弹 / 彩虹**都不可吸**（R-22.4）。
+       越界与死列是**两个不同原因、同一结果**（都无源），必须都走无源分支（A22-5）。 */
+    function pullCapOf(g, c, row){
+      var seg = segOf(g, c); if (!seg) return 0;
+      var n = 0;
+      for (var r = seg.top; r < row; r++) if (g[idx(c, r)] < 0) n++;
+      return n;
+    }
+    /* 写入目标：段内、落点行以上的空格，按行号**从大到小**（即从落点向上）取用。
+       必须写成"过滤出空格再排序"，不能写成 idx(c, row-1-k) —— 后者隐含"落点行以上全空"，
+       一旦将来有元素能在列中间制造空洞，它会把方块写进已占格（契约 §3 的警告）。 */
+    function writeTargetsOf(g, c, row){
+      var seg = segOf(g, c); if (!seg) return [];
+      var t = [];
+      for (var r = seg.top; r < row; r++) if (g[idx(c, r)] < 0) t.push(idx(c, r));
+      t.sort(function(a, b){ return b - a; });
+      return t;
+    }
+    /* 某一侧的吸附源：该列段内**行号最小且占格**的那一个，且必须是普通块。
+       返回 -1 = 该侧无源（越界 / 死列 / 空列 / 顶部不是普通块）。 */
+    function magnetSourceOf(g, n){
+      if (n < 0 || n >= COLS) return -1;
+      var seg = segOf(g, n); if (!seg) return -1;
+      for (var r = seg.top; r <= seg.bottom; r++){
+        var i = idx(n, r);
+        if (g[i] >= 0) return isNormal(g[i]) ? i : -1;
+      }
+      return -1;
+    }
+    function magnet(g, at){
+      var c = at % COLS, row = (at / COLS) | 0;
+      var pulled = [];
+      /* !! 左右源必须在**同一份盘面快照**上先判定完，再执行搬运 ——
+         否则先搬左会改变本列，后判右时读到的已经不是同一局面。 */
+      var pL = magnetSourceOf(g, c - 1), pR = magnetSourceOf(g, c + 1);
+      var sides = [{ p:pL, side:'L' }, { p:pR, side:'R' }];   // 顺序恒为**先左后右**
+      for (var k = 0; k < sides.length; k++){
+        var p = sides[k].p;
+        if (p < 0) continue;
+        var T = writeTargetsOf(g, c, row);        // 每成功一次重算（本列盘面已变）
+        if (!T.length) continue;                  // pullCap 已耗尽
+        var v = g[p];
+        g[p] = EMPTY;
+        g[T[0]] = v;
+        pulled.push({ from:p, v:v, side:sides[k].side });
+      }
+      /* 自身被消耗；最终落点交给 gravity —— 因此 pulled 里**不记录 to**
+         （写 to 会把"写入格"和"压实后格"混淆，属第 10 种静默失效同族）。 */
+      g[at] = EMPTY;
+      gravity(g);
+      return { at:at, col:c, row:row, pulled:pulled };
+    }
+
+    /* --- R-23 分裂块 SPLIT ✂️：把**正下方的普通块**分裂成两个同级方块 ---
+       目标"上方一格"恒为 at（SPLIT 自身占位格）⇒ 写入不需要新空间，
+       所以"本列上方空间不足"**不可能发生**（这是一条正面断言，不是不可测项）。
+       降级路径必须**显式**把 g[at] 清空，不能"什么都不做就 return" ——
+       否则 SPLIT 会永久留在棋盘上（违反 G7，制造"看得见、永远处理不掉"的格子）。 */
+    function split(g, at){
+      var c = at % COLS, row = (at / COLS) | 0;
+      var seg = segOf(g, c);
+      var src = -1, v = 0;
+      if (seg && row + 1 <= seg.bottom){
+        var t = idx(c, row + 1);
+        if (isNormal(g[t])){ src = t; v = g[t]; }
+      }
+      if (src >= 0) g[at] = g[src];        // 把落点格变成下方块的同级副本（等级**不 +1**）
+      else g[at] = EMPTY;                  // 降级：SPLIT 消失，盘面回到落子前
+      gravity(g);
+      return { at:at, col:c, row:row, src:src, v:v };
+    }
+
     function drop(g, col, value){
       if (!(col >= 0 && col < COLS)) return null;
       var row = landing(g, col);
@@ -1353,6 +1479,48 @@
        缺省 0 —— 未设置时与 tower8 逐字节等价（既有测试全部跑在 0 加成上）。 */
     var BOMB_RATE = 0.06, RAINBOW_RATE = 0.05;
     var bombRateX = 0, rainbowRateX = 0;
+    /* ---- 第 6 轮：R-24 specials（opt-in）与「缺省即 tower10」 ----
+       契约 §5。三条要点：
+         · 语义是**次数**不是概率（概率会让"这关有几个"随 seed 漂移，闸门写不出可失败断言）；
+         · 注入位置按 seq() 的**调用序号**计数（不是手数）—— R-24.6 裁决；
+         · 被覆盖的调用**仍然执行**原有 rng 抽取 ⇒ 缺省时序列与 tower10 逐值相同。
+       缺省（字段不存在 / null / {} / 全 0）四者互相等价，且等价于"没有 specials"。
+          · ⚠️ **EVERY 取值经真机试玩 + 实测曲线选定为 3**（原为 5；captain 真机试玩发现两个真问题：
+            F-1 —— L19 只要 4 手、L20 只要 3 手即取胜，EVERY=5 时元素第 5 抽才出现，
+            玩家与 aiRun **根本见不到元素**，这两关的 specials 形同虚设；
+            "啊哈时刻太晚" —— 开局 4 手与 tower10 毫无区别）。
+            实测（7 个 opt-in 关的 AI 路径分叉数）：
+              EVERY=5 → 5/7（L19/L20 零分叉）
+              EVERY=3 → 7/7（L19/L20 均分叉；L20 用步 3→8，磁铁真的上场）
+            元素出现的抽牌序号：L20(10步) EVERY=3 ⇒ 第 3、6 抽，均在步数预算内。
+            EVERY=1 会把元素全挤在前 7 抽（specials 列表共 7 个）之后再不出现，前重后空；
+            EVERY=2 亦可用但密度偏高。取 3 兼顾"尽早出场"与"整关有节奏"。
+            等价性不受影响：17 个无 specials 的关卡在各 EVERY 取值下与 tower10 序列差异均为 0。 */
+    var SPECIAL_EVERY = 3;
+    var SPECIAL_ORDER = ['drill', 'magnet', 'split'];
+    var SPECIAL_VAL = { drill: DRILL, magnet: MAGNET, split: SPLIT };
+    function normSpecials(s){
+      if (s == null || typeof s !== 'object') return { drill:0, magnet:0, split:0 };
+      return {
+        drill : Math.max(0, Math.floor(Number(s.drill ) || 0)),
+        magnet: Math.max(0, Math.floor(Number(s.magnet) || 0)),
+        split : Math.max(0, Math.floor(Number(s.split ) || 0))
+      };
+    }
+    /* 注入值列表 L：按 ORDER 轮转填充。
+       例 {drill:2,magnet:2,split:3} ⇒ [d,m,s,d,m,s,s]（长度 2+2+3 = 7）。 */
+    function specialsList(s){
+      var left = normSpecials(s), L = [];
+      while (left.drill + left.magnet + left.split > 0){
+        for (var k = 0; k < SPECIAL_ORDER.length; k++){
+          var key = SPECIAL_ORDER[k];
+          if (left[key] > 0){ L.push(key); left[key]--; }
+        }
+      }
+      return L;
+    }
+    /* 本关的 specials（规范化后）。缺省 ⇒ 全 0 ⇒ 不注入任何元素。 */
+    function specialsOf(i){ return normSpecials((LEVELS[i] || LEVELS[0]).specials); }
     /* 祝福概率加成（百分点之和，含叠加）：total 钳制 ≤ 100%（契约 R-10 防御条款）。 */
     function setSpecialRates(bombX, rainbowX){
       bombRateX = Math.max(0, +bombX || 0);
@@ -1365,15 +1533,27 @@
     }
     function specialRates(){ return { bomb: BOMB_RATE + bombRateX, rainbow: RAINBOW_RATE + rainbowRateX }; }
     var W = [0.34, 0.30, 0.24, 0.12];
-    function makeSeq(seed){
+    function makeSeq(seed, specials){
       var rng = mulberry32(seed);
+      var inj = specialsList(specials);        // 空数组 = 无注入（缺省路径）
+      var call = 0;
       return function(){
-        var r = rng();
-        if (r < BOMB_RATE + bombRateX) return BOMB;
-        if (r < BOMB_RATE + bombRateX + RAINBOW_RATE + rainbowRateX) return RAINBOW;
-        var x = rng(), acc = 0;
-        for (var i = 0; i < W.length; i++){ acc += W[i]; if (x < acc) return i + 1; }
-        return 1;
+        call++;
+        var r = rng(), out;
+        if (r < BOMB_RATE + bombRateX) out = BOMB;
+        else if (r < BOMB_RATE + bombRateX + RAINBOW_RATE + rainbowRateX) out = RAINBOW;
+        else {
+          var x = rng(), acc = 0;
+          out = 1;
+          for (var i = 0; i < W.length; i++){ acc += W[i]; if (x < acc){ out = i + 1; break; } }
+        }
+        /* !! 覆盖发生在**原值算完之后**：被覆盖的调用照样消耗 rng。
+           写成"提前 return"会让后续序列整体错位（A24-7 看守；HANDOFF §7 第 7 种静默失效）。 */
+        if (call % SPECIAL_EVERY === 0){
+          var j = call / SPECIAL_EVERY;                        // 1-based
+          if (j >= 1 && j <= inj.length) return SPECIAL_VAL[inj[j - 1]];
+        }
+        return out;
       };
     }
 
@@ -1435,28 +1615,28 @@
          （本来就喘不过气），再叠 40 秒。想逼的决策：
          **先清空间还是先冲目标** —— 这两件事在 4 层盘上会互相抢步数。 */
       { goal:{k:'level',v:5},    moves:10,  bonus:-1, stones:2, hammer:1, refresh:0, shape:'flat4', timer:40, tip:'⏱ 极浅盘 + 限时 40 秒：只有 4 层、只有 10 步、只有 40 秒' },
-      { goal:{k:'level',v:5},    moves:18,  bonus:-1, stones:2, hammer:2, refresh:0, shape:'well3', tip:'🟦 窄井 + 石块：一列被切成两段，锤子要省着用（只有 18 步）' },
+      { goal:{k:'level',v:5},    moves:18,  bonus:-1, stones:2, hammer:2, refresh:0, shape:'well3', specials:{drill:2}, tip:'⛏️ 定向炸弹：落在哪就把那一列从落点往下整段挖空（石块也一起挖掉），一列都不越界 —— 窄井里救列的唯一手段' },
       { goal:{k:'level',v:6},    moves:20,  bonus:-1, stones:0, hammer:1, refresh:0, shape:'valley', tip:'🟦 凹谷：中间两列只有 4 层，20 步合出 6 级' },
 
       /* --- 15..19 规则修饰符上场：同一个落子，不同的题 --- */
-      { goal:{k:'chain',v:3},    moves:40,  bonus:-1, stones:0, hammer:0, refresh:0, shape:'classic', tip:'把同级堆成一片，连锁才会来' },
+      { goal:{k:'chain',v:3},    moves:40,  bonus:-1, stones:0, hammer:0, refresh:0, shape:'classic', specials:{split:3}, tip:'✂️ 分裂块：把正下方的方块复制成两个同级块 —— 把它们对准你最高的块，连锁才会来' },
       { goal:{k:'level',v:5},    moves:16,  bonus:-1, stones:0, hammer:1, refresh:0, shape:'notch', rules:['noMerge1'], tip:'⚙️ 1 级不可合成 + 只有 16 步：1 级只能靠彩虹或炸弹处理' },
       /* 第 17 关：chainBonus + 限时。这条规则要求"一次引爆 ≥3 连锁"，
          而摆局是要花时间的 —— 限时 60 秒正好和它对冲。
          想逼的决策：**摆 3 连锁（慢、分高）还是单合（快、0 分）**。 */
-      { goal:{k:'score',v:1200}, moves:80,  bonus:-1, stones:0, hammer:1, refresh:0, shape:'classic', rules:['chainBonus'], timer:60, tip:'⚙️⏱ 连锁 ≥3 才有分 + 限时 60 秒：摆局要花时间，但单次合成得 0 分' },
+      { goal:{k:'score',v:1200}, moves:80,  bonus:-1, stones:0, hammer:1, refresh:0, shape:'classic', rules:['chainBonus'], timer:60, specials:{split:3}, tip:'⚙️⏱✂️ 连锁 ≥3 才有分 + 限时 60 秒：分裂块把正下方的块复制成两个同级块，是凑 ≥3 连锁的新解法 —— 但摆局要花时间' },
       { goal:{k:'level',v:5},    moves:10,  bonus:-1, stones:0, hammer:1, refresh:1, shape:'classic', rules:['residue'], tip:'⚙️ 合成留残渣 + 只有 10 步：每次合成都会回吐一格，空间不再净赚' },
       /* 第 19 关：预警线**放宽**到 at:1（depth8 → 离顶只剩 1 层才报警）。
          验收要求"有的关可以堆到接近顶部（宽松，但目标更难）"——
          这条正好是它的对照面：空间上几乎不报警，但步数卡到 12。 */
-      { goal:{k:'level',v:5},    moves:12,  bonus:-1, stones:2, hammer:2, refresh:0, shape:'stairR', rules:['stoneSink'], sinkEvery:6, danger:{at:1}, tip:'⚠ 预警线放宽到「距顶 1 层」（几乎不报警）—— 但石块每 6 步磨削一格，空间照样被吃，且只有 12 步' },
+      { goal:{k:'level',v:5},    moves:12,  bonus:-1, stones:2, hammer:2, refresh:0, shape:'stairR', rules:['stoneSink'], sinkEvery:6, danger:{at:1}, specials:{drill:2}, tip:'⚠⛏️ 预警线放宽到「距顶 1 层」（几乎不报警）—— 但石块每 6 步磨削一格，空间照样被吃；定向炸弹能一次把整列（连石块）挖空，只有 12 步' },
 
       /* --- 20..24 组合关：两条以上机制同时作用 --- */
-      { goal:{k:'level',v:4},    moves:10,  bonus:-1, stones:0, hammer:3, refresh:1, shape:'well2', rules:['noMerge1'], tip:'⚙️ 极窄井 2 列 + 1 级不可合成：彩虹与炸弹是主要出路，只有 10 步' },
-      { goal:{k:'level',v:5},    moves:16,  bonus:-1, stones:0, hammer:2, refresh:1, shape:'funnel', rules:['residue'], tip:'⚙️ 漏斗 + 合成留残渣：中间 8 层，但每次合成都会回吐一格' },
+      { goal:{k:'level',v:4},    moves:10,  bonus:-1, stones:0, hammer:3, refresh:1, shape:'well2', rules:['noMerge1'], specials:{magnet:2}, tip:'⚙️🧲 极窄井 2 列 + 1 级不可合成：磁铁块把邻列最顶部的普通块吸到本列（只吸普通块，吸来的 1 级仍不可合成）—— 只有 10 步' },
+      { goal:{k:'level',v:5},    moves:16,  bonus:-1, stones:0, hammer:2, refresh:1, shape:'funnel', rules:['residue'], specials:{magnet:2}, tip:'⚙️🧲 漏斗 + 合成留残渣：磁铁块跨列搬运邻列最顶部的普通块，把同类搬到一起 —— 每次合成都会回吐一格' },
       { goal:{k:'level',v:5},    moves:30,  bonus:-1, stones:2, hammer:2, refresh:1, shape:'classic', rules:['stoneSink','residue'], sinkEvery:8, timer:60, tip:'⚙️⏱ 石块磨削 + 合成留残渣 + 限时 60 秒：三条压力同时挤你' },
       { goal:{k:'level',v:5},    moves:18,  bonus:-1, stones:1, hammer:3, refresh:2, shape:'notch', rules:['noMerge1','residue'], danger:{at:3}, tip:'⚙️⚠ 中间挖空 + 1 级不可合成 + 留残渣 + 预警线距顶 3 层' },
-      { goal:{k:'level',v:7},    moves:55,  bonus:-1, stones:0, hammer:3, refresh:2, shape:'taper', rules:['stoneSink','residue'], sinkEvery:8, timer:120, tip:'⚙️⏱ 终关：楔形棋盘 + 石块磨削 + 合成留残渣 + 限时 120 秒 —— 要在这儿合出 7 级' }
+      { goal:{k:'level',v:7},    moves:55,  bonus:-1, stones:0, hammer:3, refresh:2, shape:'taper', rules:['stoneSink','residue'], sinkEvery:8, timer:120, specials:{drill:2, magnet:2, split:3}, tip:'⚙️⏱⛏️🧲✂️ 终关：楔形棋盘 + 石块磨削 + 合成留残渣 + 限时 120 秒 —— 定向炸弹/磁铁块/分裂块三件全上，要在这儿合出 7 级' }
     ];
 
     /* =====================================================================
@@ -1528,7 +1708,8 @@
       var hammer = L.hammer || 0, refresh = L.refresh || 0;
       var g = emptyForLevel(levelIdx);
       placeStones(g, L.stones || 0, hashStr('stone-lv' + levelIdx));
-      var seq = makeSeq(hashStr('lv' + levelIdx));
+      /* R-24：specials 缺省时不注入任何元素 ⇒ 与 tower10 逐值相同（A24-2 看守）。 */
+      var seq = makeSeq(hashStr('lv' + levelIdx), L.specials);
       var nextQ = [seq(), seq()];
       var score = 0, chains = 0, combo = 0, moves = 0;
       var cap = L.moves > 0 ? L.moves : maxMoves;
@@ -1545,7 +1726,11 @@
           var g2 = clone(g);
           var d = drop(g2, c, val);
           if (!d) continue;
+          /* 元素效果 → resolve → 计分（与 BOMB 分支完全同构，契约 §8.1） */
           if (val === BOMB) explode(g2, d.at);
+          else if (val === DRILL) drill(g2, d.at);
+          else if (val === MAGNET) magnet(g2, d.at);
+          else if (val === SPLIT) split(g2, d.at);
           var ev = resolve(g2, L.bonus, multiplierFor(combo));
           var pts = 0, ch = 0;
           for (var ei = 0; ei < ev.length; ei++) pts += ev[ei].pts;
@@ -1713,7 +1898,7 @@
       var goal = cfg.goal;
       var g = emptyFor(cfg.shape, cfg.rules || [], cfg.sinkEvery || 0);
       placeStones(g, cfg.stones || 0, hashStr(cfg.stoneSeed));
-      var seq = makeSeq(hashStr(cfg.seed));
+      var seq = makeSeq(hashStr(cfg.seed), cfg.specials);
       var nextQ = [seq(), seq()];
       var score = 0, chains = 0, combo = 0, moves = 0;
       var dangerL = cfg.danger || null;
@@ -1727,6 +1912,9 @@
           var d = drop(sim, c, val);
           if (!d) continue;
           if (val === BOMB) explode(sim, d.at);
+          else if (val === DRILL) drill(sim, d.at);
+          else if (val === MAGNET) magnet(sim, d.at);
+          else if (val === SPLIT) split(sim, d.at);
           var events = resolve(sim, cfg.bonus === undefined ? -1 : cfg.bonus, multiplierFor(combo));
           var maxLv = 0;
           for (var i = 0; i < events.length; i++) if (events[i].to > maxLv) maxLv = events[i].to;
@@ -1879,6 +2067,12 @@
       countStone: countStone, countRubble: countRubble,
       isNormal: isNormal, isBomb: isBomb, isStone: isStone, isRainbow: isRainbow, isRubble: isRubble,
       isBlock: isBlock,
+      /* ---- 第 6 轮：C3 三元素（契约 §0.2 / R-21 / R-22 / R-23） ---- */
+      DRILL: DRILL, MAGNET: MAGNET, SPLIT: SPLIT,
+      isDrill: isDrill, isMagnet: isMagnet, isSplit: isSplit, isSpecial: isSpecial,
+      drill: drill, magnet: magnet, split: split,
+      SPECIAL_EVERY: SPECIAL_EVERY, SPECIAL_ORDER: SPECIAL_ORDER,
+      normSpecials: normSpecials, specialsList: specialsList, specialsOf: specialsOf,
       scoreFor: scoreFor, multiplierFor: multiplierFor, makeSeq: makeSeq, hashStr: hashStr, LEVELS: LEVELS,
       hasBless: hasBless, setSpecialRates: setSpecialRates, specialRates: specialRates,
       /* ---- 第 4 轮：形状 / 规则 ---- */
@@ -2862,11 +3056,18 @@
   }
 
   /* ---------- 渲染 ---------- */
+  /* !! 第 6 轮：四个函数**全部**必须覆盖三个新元素。
+     漏掉任何一个都会落到 gemOf(v) 的兜底路径并抛错 ——
+     历史上 "gemName is not defined" 就是这么炸的（HANDOFF §7 第 1 条）。
+     这里四个函数的元素覆盖面**逐条对齐**，任何一个漏项都会被 A21-7/A22-9/A23-9 抓住。 */
   function blockClass(v){
     if (v === Logic.BOMB) return ' bomb';
     if (v === Logic.STONE) return ' stone';
     if (v === Logic.RAINBOW) return ' rainbow';
     if (Logic.isRubble(v)) return ' rubble';
+    if (Logic.isDrill(v)) return ' drill';
+    if (Logic.isMagnet(v)) return ' magnet';
+    if (Logic.isSplit(v)) return ' split';
     return '';
   }
   function blockText(v){
@@ -2874,10 +3075,14 @@
     if (v === Logic.STONE) return '🧱';
     if (v === Logic.RAINBOW) return '🌈';
     if (Logic.isRubble(v)) return '🕳';
+    if (Logic.isDrill(v)) return '⛏️';
+    if (Logic.isMagnet(v)) return '🧲';
+    if (Logic.isSplit(v)) return '✂️';
     return gemOf(v).e;
   }
   function blockBg(v){
     if (v === Logic.BOMB || v === Logic.STONE || v === Logic.RAINBOW || Logic.isRubble(v)) return '';
+    if (Logic.isSpecial(v)) return '';
     return COLORS[(v-1) % COLORS.length];
   }
   function blockFont(v){
@@ -2885,6 +3090,7 @@
     if (v === Logic.STONE) return 18;
     if (v === Logic.RAINBOW) return 20;
     if (Logic.isRubble(v)) return 17;
+    if (Logic.isSpecial(v)) return 19;
     return 22;
   }
   /* 把宝石图铺满格子。图未就绪时保留 emoji 兜底，不阻塞玩法。
@@ -3144,6 +3350,21 @@
     var sh = Logic.shapeOf(levelIdx), shp = Logic.shapeId(levelIdx);
     var tags = [];
     if (shp !== 'classic') tags.push({ cls:'shp', txt:'🟦 ' + Logic.shapeName(sh), title: Logic.shapeNorm(sh).depth ? ('每列可用层数 ' + sh.depth.join('/')) : '' });
+    /* 第 6 轮：本关启用的 C3 元素必须**常驻可见**（与规则条同一个理由 ——
+       tip 是一次性的，而"这关会掉定向炸弹"是全程生效的）。 */
+    var sp = Logic.normSpecials(L.specials);
+    var spTxt = { drill:'⛏️ 定向炸弹', magnet:'🧲 磁铁块', split:'✂️ 分裂块' };
+    var spDesc = {
+      drill : '落在哪就把那一列从落点往下整段挖空（石块/碎石一起挖），一列都不越界',
+      magnet: '把左右邻列最顶部的普通块各吸一格到本列（只吸普通块）',
+      split : '把正下方的普通方块复制成两个同级块（等级不变），立刻参与本轮连锁'
+    };
+    var spKeys = ['drill', 'magnet', 'split'];
+    for (var sk = 0; sk < spKeys.length; sk++){
+      if (sp[spKeys[sk]] > 0){
+        tags.push({ cls:'elem', txt: spTxt[spKeys[sk]] + ' ×' + sp[spKeys[sk]], title: spDesc[spKeys[sk]] });
+      }
+    }
     var rs = L.rules || [];
     for (var i = 0; i < rs.length; i++){
       var def = Logic.RULES[rs[i]];
@@ -3244,6 +3465,38 @@
         toast('炸开！', '#FF8A8A');
         render({ boom: boomCells });
         setTimeout(afterDrop, 260);
+      } else if (val === Logic.DRILL){
+        /* R-21：纵向清列。演出与炸弹同构（清除格走 boom 幽灵），但只清一列。 */
+        var dc = Logic.drill(grid, d.at), dCells = [];
+        for (var di=0;di<dc.cleared.length;di++){
+          dCells.push(dc.cleared[di].i);
+          burst(cellRect(dc.cleared[di].c, dc.cleared[di].r), '#FFD479', 6, 1.2);
+        }
+        blastFx(d.col, d.row);
+        playBoom(); shake(); buzz([20,40,20]);
+        toast('挖开！', '#FFD479');
+        render({ boom: dCells });
+        setTimeout(afterDrop, 240);
+      } else if (val === Logic.MAGNET){
+        /* R-22：跨列搬运。源格消失 → smash 幽灵；本列多出的块由数据驱动重建。 */
+        var mc = Logic.magnet(grid, d.at), mFrom = [];
+        for (var mi=0;mi<mc.pulled.length;mi++){
+          var mf = mc.pulled[mi].from;
+          mFrom.push(mf);
+          burst(cellRect(mf % Logic.COLS, (mf / Logic.COLS) | 0), '#E86B5A', 6, 1.1);
+        }
+        playSmash(); buzz([16,28,16]);
+        toast(mc.pulled.length ? ('吸来 ' + mc.pulled.length + ' 块') : '本列没有空间可吸', '#E86B5A');
+        render({ smash: mFrom });
+        setTimeout(afterDrop, 240);
+      } else if (val === Logic.SPLIT){
+        /* R-23：就地增块。落点格变成下方块的副本 → born 弹入。 */
+        var sc = Logic.split(grid, d.at);
+        if (sc.src >= 0) burst(cellRect(d.col, d.row), '#5BC0D4', 8, 1.2);
+        playSmash(); buzz([16,28,16]);
+        toast(sc.src >= 0 ? '分裂！' : '下方没有可分裂的方块', '#5BC0D4');
+        render(sc.src >= 0 ? { born: [d.at] } : undefined);
+        setTimeout(afterDrop, 240);
       } else {
         afterDrop();
       }
@@ -3634,7 +3887,10 @@
     if (!body) return;
     function cellHtml(lv, label){
       var bg, txt;
-      if (lv === Logic.BOMB){ bg = '#2A2740'; txt = '💣'; }
+      if (lv === Logic.DRILL){ bg = 'linear-gradient(160deg,#8A6238,#3E2C1C)'; txt = '⛏️'; }
+      else if (lv === Logic.MAGNET){ bg = 'linear-gradient(160deg,#C0392B,#6E1F18)'; txt = '🧲'; }
+      else if (lv === Logic.SPLIT){ bg = 'linear-gradient(160deg,#2E7D8F,#163F4A)'; txt = '✂️'; }
+      else if (lv === Logic.BOMB){ bg = '#2A2740'; txt = '💣'; }
       else if (lv === Logic.STONE){ bg = '#4A4566'; txt = '🧱'; }
       else if (lv === Logic.RAINBOW){ bg = 'linear-gradient(135deg,#FF6B6B,#FFD479,#7FD87F,#6FD8C8,#8B7BF7)'; txt = '🌈'; }
       else { bg = COLORS[(lv-1) % COLORS.length]; txt = String(lv); }
@@ -3668,6 +3924,20 @@
         '<div class="hb">落到哪就炸掉周围 <b>3×3</b> 的范围（<b>连石块一起炸</b>）。' +
         '适合清场救急，但会<b>打断连击</b>。</div>' +
         '<div class="hdemo">' + cellHtml(Logic.BOMB, '炸掉周围 9 格，包括石块') + '</div>' +
+      '</div>' +
+
+      '<div class="hcard">' +
+        '<div class="ht">⛏️🧲✂️ 三种特殊方块（部分关卡会出现）</div>' +
+        '<div class="hb">它们不是宝石，<b>不能合成</b>，落地就立刻发动，然后自己消失：<br>' +
+        '<b>⛏️ 定向炸弹</b> —— 落在哪就把那一列<b>从落点往下整段挖空</b>（石块、碎石一起挖掉），' +
+        '但<b>一列都不越界</b>。适合救一列快堆满的塔，或在堆叠里挖一口井。<br>' +
+        '<b>🧲 磁铁块</b> —— 把<b>左右邻列最顶部</b>的普通方块各吸一格到本列（最多 2 个）。' +
+        '只吸普通块：邻列顶部是石块/碎石/炸弹/彩虹就吸不动；本列上方没空格也吸不动。<br>' +
+        '<b>✂️ 分裂块</b> —— 把<b>正下方</b>的普通方块复制成两个同级块（等级不变），' +
+        '两个块立刻参与本轮连锁。下方不是普通块时它什么也不做（自己照样消失）。<br>' +
+        '<span style="color:#8E88A8">用不用得上，取决于你把它们对准了哪一列 —— 这是本作里最"看局面"的三种块。</span></div>' +
+        '<div class="hdemo">' + cellHtml(Logic.DRILL, '挖空本列落点以下') + ' ' +
+          cellHtml(Logic.MAGNET, '吸邻列顶部普通块') + ' ' + cellHtml(Logic.SPLIT, '复制正下方方块') + '</div>' +
       '</div>' +
 
       '<div class="hcard">' +
@@ -3997,7 +4267,8 @@
        stopTime() 必须在 ended=false 之前调用 —— 否则旧的 tick 会认为
        自己还在跑并触发一次 lose()。 */
     stopTime();
-    seq = Logic.makeSeq(Logic.hashStr('lv' + levelIdx));
+    /* R-24：把本关的 specials 交给牌序发生器 —— 缺省（未声明）时不注入任何元素。 */
+    seq = Logic.makeSeq(Logic.hashStr('lv' + levelIdx), L.specials);
     /* 形状与规则**全部来自关卡数据**，这里没有任何 if (levelIdx === n) 分支。
        emptyForLevel 用的就是 Logic.LEVELS[i] 的 shape / rules / sinkEvery。 */
     grid = Logic.emptyForLevel(levelIdx);
@@ -4163,6 +4434,35 @@
     try { applyTheme(meta.getTheme()); } catch(e){}
   }
   window.__logic = Logic;
+  /* 第 6 轮 C3 三元素的对外调试入口（验收判据【S】读它，不读"看起来有"）。
+     只暴露纯函数 + 常量；真实落子仍然只能走棋盘点击（避免"只有 API 能触发"）。 */
+  window.__c3 = {
+    DRILL: Logic.DRILL, MAGNET: Logic.MAGNET, SPLIT: Logic.SPLIT,
+    SPECIAL_EVERY: Logic.SPECIAL_EVERY,
+    isDrill: Logic.isDrill, isMagnet: Logic.isMagnet, isSplit: Logic.isSplit, isSpecial: Logic.isSpecial,
+    drill : function(g, at){ return Logic.drill(g, at); },
+    magnet: function(g, at){ return Logic.magnet(g, at); },
+    split : function(g, at){ return Logic.split(g, at); },
+    normSpecials: Logic.normSpecials,
+    specialsList: Logic.specialsList,
+    specialsOfLevel: function(i){ return Logic.specialsOf(i); },
+    /* 本关牌序里三个元素出现的调用序号（1-based）—— A24-6 用 */
+    seqPlan: function(i){
+      var L = Logic.specialsList((Logic.LEVELS[i] || {}).specials), out = [];
+      for (var j = 0; j < L.length; j++) out.push({ call: (j + 1) * Logic.SPECIAL_EVERY, kind: L[j] });
+      return out;
+    },
+    /* 采样本关牌序前 n 次调用的真值 —— 用**游戏自己的** makeSeq（同一个 seed 口径） */
+    seqSample: function(i, n){
+      var s = Logic.makeSeq(Logic.hashStr('lv' + i), (Logic.LEVELS[i] || {}).specials), out = [];
+      for (var k = 0; k < (n || 40); k++) out.push(s());
+      return out;
+    },
+    blockText: function(v){ return blockText(v); },
+    blockClass: function(v){ return blockClass(v); },
+    blockBg: function(v){ return blockBg(v); },
+    blockFont: function(v){ return blockFont(v); }
+  };
   window.__startLevel = startLevel;
   /* 暴露元游戏层，供验收闸门与人工核对读取真实状态 */
   window.__meta = meta;
@@ -4210,7 +4510,7 @@
      上一轮的教训：光有"我加了 X"的说法不算证据 —— 必须能从外部读到数字。
      这里把分级/心跳/绝境逢生的**纯函数**也导出去，便于 Node 里直接单测。
      --------------------------------------------------------------------- */
-  window.__test = { round: 3, roundShape: 4, roundPressure: 5, roundBless: 9 };   // roundBless = 第 9 轮祝福系统
+  window.__test = { round: 3, roundShape: 4, roundPressure: 5, roundBless: 9, roundElements: 11 };   // roundElements = 第 11 轮 C3 三元素
   /* 给闸门/量具读"这一关到底是什么题"的只读接口。
      形状与规则必须是**能读出来的数据**，不能只存在于视觉上 ——
      否则"看起来不一样"与"真的是另一道题"无法区分。 */
