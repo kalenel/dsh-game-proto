@@ -19,7 +19,7 @@
   罐口单向盖 **一个字符都没动**。校验脚本会打印这 4 行的 diff。
 
   ## 接线（外壳元素 → 物理）
-      #stage   384×636 就是物理矩形，renderer 每帧从 getBoundingClientRect() 量
+      #stage   384×560 就是物理矩形，renderer 每帧从 getBoundingClientRect() 量
       #cv      canvas 渲染位：瞄准线 / 落点 / 冲击波环 / 火花（宝石本身走 DOM，见下）
       #gems    运行时生成 .gem（<img>），每帧只改 transform；外壳的 .gem 自发光与
                .gem.merge-hot 是 CSS filter + var(--g)/var(--glow)，只有 DOM 能吃到
@@ -49,7 +49,7 @@
      熔核 / CORE —— 原创视觉外壳
      概念：你在冷却一颗星核；宝石是凝聚中的能量结晶；容器是力场边界。
      色温：JS 改 body[data-temp] = cold | amber | red | white（1-3 / 4-6 / 7-9 / 10）
-     物理： #stage[data-arena-w=384][data-arena-h=636][data-danger-offset=40]
+     物理： #stage[data-arena-w=384][data-arena-h=560][data-danger-offset=40]
      光爆： #flash.burst → flashBurst .16s（峰值 .95）；#ring.burst → ringBurst .18s
      #ring 的 left/top 由 JS 写入合并点；#flash/#ring 的 data-state 供 CDP 断言
      .gem.merge-hot → gemFlash .18s（前 60ms 光晕 ×1.6）
@@ -229,9 +229,9 @@
       drop-shadow(0 0 8px rgba(200,238,255,.65))
       drop-shadow(0 0 20px rgba(120,170,255,.35));}
 
-  /* ================= 力场边界：物理区 384×636 ================= */
+  /* ================= 力场边界：物理区 384×560 ================= */
   #stage{
-    position:absolute;left:3px;top:100px;width:384px;height:636px;
+    position:absolute;left:3px;top:196px;width:384px;height:440px;
     clip-path:polygon(26px 0,calc(100% - 26px) 0,100% 26px,100% calc(100% - 26px),calc(100% - 26px) 100%,26px 100%,0 calc(100% - 26px),0 26px);
     background:
       radial-gradient(78% 46% at 50% 100%, rgba(var(--temp-rgb),.22) 0%, rgba(var(--temp-rgb),.05) 52%, transparent 76%),
@@ -407,14 +407,14 @@
   <div id="combo"></div>
   <div id="tip">拖动宝石 · 松手落子</div>
 
-  <div id="stage" data-arena-w="384" data-arena-h="636" data-danger-offset="40">
+  <div id="stage" data-arena-w="384" data-arena-h="440" data-danger-offset="40">
     <div class="inner"></div>
     <div class="core-halo"></div>
     <div class="orbit a"></div><div class="orbit b"></div>
 
     <div id="gems"></div>
 
-    <canvas id="cv" width="384" height="636" aria-hidden="true"></canvas>
+    <canvas id="cv" width="384" height="440" aria-hidden="true"></canvas>
 
     <div id="danger"></div>
     <div class="edge t"></div><div class="edge b"></div><div class="edge l"></div><div class="edge r"></div>
@@ -446,7 +446,7 @@ var Logic = (function(){
 
     /* ---------------- 世界常量 ---------------- */
     var CW = 384;                 // 内腔宽（世界单位）。CORE 外壳的物理区宽 = 384
-    var CH = 636;                 // 内腔高  ⇒ 384/636 = 0.604（CORE 外壳的物理区高）
+    var CH = 440;                 // 内腔高  ⇒ 384/440 = 0.873（captain 三压：520 时开局仍显空，压到 440）
     var WALL = 18;                // 画出来的墙厚（渲染用，不参与物理）
     var TOP_PAD = 118;            // 容器上沿以上的「持握区」高度（渲染用）
     var DANGER_Y = CH - 90;       // 危险线高度（y 自**底部**起算，py(y)=oy-y*s）。CH-40 会让线贴到罐口
@@ -457,7 +457,7 @@ var Logic = (function(){
     /* 半径表：严格递增。整体放大 1.4×（captain 调整）：
        原值 [16,22,29,38,49,62,77,94,113,134] 下 1 级直径仅占容器宽 8.3%，
        开局画面显得空；放大后 1 级占 11.5%、10 级占 97.9%（2×188=376 < 384 仍装得下）。 */
-    var RADII = [0, 22, 31, 41, 53, 69, 87, 108, 132, 158, 188];
+    var RADII = [0, 18, 25, 33, 44, 56, 71, 88, 108, 130, 154];
     /* 合出该等级的得分（索引 = 合并后的等级；1 级不可被合出） */
     var SCORE = [0, 0, 10, 25, 50, 90, 150, 240, 380, 580, 900];
     var NAMES = ['', '石英', '紫水晶', '海蓝宝', '祖母绿', '红宝石',
@@ -870,8 +870,35 @@ var Logic = (function(){
         dropMerges: 0, dropMaxGen: 0, maxDropMerges: 0, capHit: 0, capHits: 0,
         genMax: 0, genSum: 0
       };
+      /* 开局垫底：预置 3 层共 11 颗（captain 调整）。
+         为什么要有：原开局 bodies 为空，第一屏只有底部一颗，容器 636 高有 85% 是空的
+         —— 玩家第一眼看到的是"空盒子"，不是"游戏"。预置后开局填充率约 22%。 */
+      seedOpening(s);
       s.next = pickLevel(s);
       return s;
+    }
+
+    /* 开局垫底：单层贴地，**等级从中间向两边递减**（中间 2 级、两侧 1 级）。
+       为什么单层：多层堆叠实测必然在第 27 步左右因沉降落进缝隙而整排合并
+       （行距试过 2r / 2.4r / 3r 全失败，rest 标记阻止不了沉降）。
+       为什么混合等级：全 1 级太矮（占容器 7%，开局空）；全 2 级开局偏简单；
+       中间高两侧低既撑起高度，又保留了向上合成的空间。
+       预置不送分：SCORE 只在合并产生时计，addBody 不计分。 */
+    function seedOpening(s){
+      /* 从左到右的等级序列：1,2,2,3,2,2,1 —— 中间最高 */
+      var seq = [1, 2, 2, 3, 2, 2, 1];
+      var maxR = RADII[3];                    /* 33，最大那颗的半径 */
+      var cursor = maxR + 2;                  /* 从左边界起排，留 2px */
+      for (var i = 0; i < seq.length; i++){
+        var lv = seq[i], rad = RADII[lv];
+        var x = cursor + rad;
+        if (x > CW - rad - 2) break;
+        var b = addBody(s, lv, x, rad, 0, 0);
+        b.rest = true;
+        b.vx = 0; b.vy = 0;
+        if (b.px !== undefined){ b.px = b.x; b.py = b.y; }
+        cursor = x + rad + MERGE_SLOP + 14;   /* 下一颗圆心：2r+slop+14 的余量 */
+      }
     }
 
     /* 落一手：x 是世界坐标（会被夹到 [r, CW-r]，所以贴边落子也是合法的） */
