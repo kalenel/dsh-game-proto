@@ -105,23 +105,116 @@
   .dust i:nth-child(7){left:120px;top:88px;width:1px;height:1px;opacity:.4}
   .dust i:nth-child(8){right:130px;top:80px;width:2px;height:2px;opacity:.35}
 
+  /* ---------- 背景纵深：网格 + 光柱 + 缓慢漂移的星尘 ---------- */
+  /* ① 透视网格：给「这是一个空间」的锚点，随色温染色 */
+  .grid{
+    position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.9;
+    background-image:
+      linear-gradient(rgba(var(--temp-rgb),.16) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--temp-rgb),.16) 1px, transparent 1px);
+    background-size:46px 46px;
+    mask-image:radial-gradient(130% 96% at 50% 44%, #000 34%, rgba(0,0,0,.35) 68%, transparent 92%);
+    -webkit-mask-image:radial-gradient(130% 96% at 50% 44%, #000 34%, rgba(0,0,0,.35) 68%, transparent 92%);
+  }
+  /* ①b 次级细网格：增加密度层次（大格套小格） */
+  .grid2{
+    position:fixed;inset:0;pointer-events:none;z-index:0;opacity:.6;
+    background-image:
+      linear-gradient(rgba(var(--temp-rgb),.09) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--temp-rgb),.09) 1px, transparent 1px);
+    background-size:11.5px 11.5px;
+    mask-image:radial-gradient(120% 78% at 50% 46%, #000 22%, transparent 74%);
+    -webkit-mask-image:radial-gradient(120% 78% at 50% 46%, #000 22%, transparent 74%);
+  }
+  /* ② 中央光柱：从容器底部向上打的体积光 */
+  .beam{
+    position:fixed;left:50%;bottom:0;width:470px;height:100%;
+    transform:translateX(-50%);pointer-events:none;z-index:0;filter:blur(30px);
+    background:linear-gradient(0deg,
+      rgba(var(--temp-rgb),.34) 0%,
+      rgba(var(--temp-rgb),.14) 30%,
+      rgba(var(--temp-rgb),.05) 52%,
+      transparent 74%);
+  }
+  /* ②b 顶部极光带：让上半部不空 */
+  .aurora{
+    position:fixed;left:50%;top:-8%;width:150%;height:46%;
+    transform:translateX(-50%);pointer-events:none;z-index:0;filter:blur(40px);
+    background:
+      radial-gradient(58% 100% at 32% 0%, rgba(var(--temp-rgb),.20) 0%, transparent 68%),
+      radial-gradient(52% 100% at 70% 6%, rgba(var(--temp-rgb),.14) 0%, transparent 66%);
+  }
+  /* ③ 漂移星尘：缓慢上升，制造"能量在流动"的感觉 */
+  .motes{position:fixed;inset:0;pointer-events:none;z-index:0;overflow:hidden}
+  .motes i{
+    position:absolute;bottom:-12px;border-radius:50%;
+    background:var(--core-temp);opacity:0;
+    box-shadow:0 0 8px var(--core-temp);
+    animation:moteRise linear infinite;
+  }
+  .motes i:nth-child(1){left:8%;  width:2px;height:2px;animation-duration:17s;animation-delay:0s}
+  .motes i:nth-child(2){left:21%; width:3px;height:3px;animation-duration:23s;animation-delay:-4s}
+  .motes i:nth-child(3){left:34%; width:2px;height:2px;animation-duration:19s;animation-delay:-9s}
+  .motes i:nth-child(4){left:47%; width:2px;height:2px;animation-duration:26s;animation-delay:-2s}
+  .motes i:nth-child(5){left:58%; width:3px;height:3px;animation-duration:21s;animation-delay:-13s}
+  .motes i:nth-child(6){left:71%; width:2px;height:2px;animation-duration:24s;animation-delay:-6s}
+  .motes i:nth-child(7){left:83%; width:2px;height:2px;animation-duration:18s;animation-delay:-16s}
+  .motes i:nth-child(8){left:92%; width:3px;height:3px;animation-duration:28s;animation-delay:-11s}
+  @keyframes moteRise{
+    0%   {transform:translateY(0)      scale(.7); opacity:0}
+    12%  {opacity:.55}
+    78%  {opacity:.32}
+    100% {transform:translateY(-104vh) scale(1.15); opacity:0}
+  }
+
   .floor-glow{position:fixed;left:0;right:0;bottom:0;height:200px;pointer-events:none;z-index:0;
     background:radial-gradient(60% 100% at 50% 100%, rgba(var(--temp-rgb),.12) 0%, transparent 72%);}
   .app{position:relative;z-index:2;height:100%;}
 
+  /* ---------- HUD：左（标题/分数/最高） 右（下一颗） ---------- */
+  .hud{position:absolute;left:0;right:0;top:0;height:118px;display:flex;
+       align-items:flex-start;justify-content:space-between;padding:10px 18px 0;box-sizing:border-box}
+  .hud-l{display:flex;flex-direction:column;gap:2px}
+  .hud-r{display:flex;flex-direction:column;align-items:center;gap:5px}
+  .title{
+    font-size:12px;letter-spacing:.42em;font-weight:400;
+    color:rgba(var(--temp-rgb),.72);text-transform:none;
+    padding-left:.42em;                     /* 抵消末字 letter-spacing，视觉左对齐 */
+  }
+  .best{font-size:11px;letter-spacing:.16em;color:rgba(var(--temp-rgb),.46);padding-left:.16em}
+  .best b{font-weight:500;color:rgba(var(--temp-rgb),.78);font-variant-numeric:tabular-nums}
+  .next-lb{font-size:10px;letter-spacing:.3em;color:rgba(var(--temp-rgb),.55);padding-left:.3em}
+
   /* 分数：唯一的主信息 */
   #score{
-    position:absolute;left:18px;top:10px;
-    font-size:76px;line-height:.95;font-weight:300;letter-spacing:.01em;
+    font-size:72px;line-height:.98;font-weight:300;letter-spacing:.01em;
     color:var(--core-temp);font-variant-numeric:tabular-nums;
     text-shadow:
       0 0 18px rgba(var(--temp-rgb),.45),
       0 0 46px rgba(var(--temp-rgb),.22);
   }
 
-  /* 下一颗：小块，切角，不抢 */
+  /* ---------- 连锁提示：合并时短暂弹出 ---------- */
+  #combo{
+    position:absolute;left:50%;top:132px;transform:translate(-50%,0) scale(.9);
+    font-size:15px;letter-spacing:.3em;font-weight:400;white-space:nowrap;
+    color:var(--core-temp);opacity:0;pointer-events:none;z-index:60;
+    text-shadow:0 0 14px rgba(var(--temp-rgb),.7);
+    transition:opacity .16s ease,transform .16s cubic-bezier(.2,1.4,.4,1);
+  }
+  #combo.show{opacity:1;transform:translate(-50%,0) scale(1)}
+
+  /* ---------- 操作引导：首次落子后淡出 ---------- */
+  #tip{
+    position:absolute;left:0;right:0;bottom:22px;text-align:center;
+    font-size:12px;letter-spacing:.28em;color:rgba(var(--temp-rgb),.42);
+    pointer-events:none;z-index:60;transition:opacity .5s ease;
+  }
+  #tip.hide{opacity:0}
+
+  /* 下一颗：小块，切角，不抢（在 .hud-r 的 flex 流里，不再是绝对定位） */
   #next{
-    position:absolute;right:12px;top:12px;width:58px;height:58px;
+    position:relative;width:58px;height:58px;
     clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
     background:var(--core-temp);
   }
@@ -210,6 +303,18 @@
   .core-halo{position:absolute;left:41px;top:-3px;width:300px;height:300px;z-index:1;pointer-events:none;
     border-radius:50%;filter:blur(6px);
     background:radial-gradient(circle, rgba(255,244,214,.12) 0%, rgba(255,198,120,.04) 46%, transparent 68%);}
+
+  /* 腔体网格：容器内壁的纵深参考线（随色温染色），让"空腔"不空 */
+  .cavity{
+    position:absolute;inset:0;z-index:1;pointer-events:none;
+    background-image:
+      linear-gradient(rgba(var(--temp-rgb),.085) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(var(--temp-rgb),.085) 1px, transparent 1px);
+    background-size:32px 32px;
+    mask-image:linear-gradient(180deg, rgba(0,0,0,.95) 0%, rgba(0,0,0,.5) 48%, rgba(0,0,0,.95) 100%);
+    -webkit-mask-image:linear-gradient(180deg, rgba(0,0,0,.95) 0%, rgba(0,0,0,.5) 48%, rgba(0,0,0,.95) 100%);
+  }
+
   .orbit{position:absolute;z-index:4;pointer-events:none;border:1px solid rgba(var(--temp-rgb),.35);
     border-radius:50%;box-shadow:0 0 8px rgba(var(--temp-rgb),.18);}
   .orbit.a{left:63px;top:110px;width:256px;height:74px;transform:rotate(-18deg)}
@@ -226,9 +331,9 @@
   #flash.burst{animation:flashBurst .16s cubic-bezier(.12,.75,.2,1) 1 both;}
   @keyframes flashBurst{
     0%{opacity:0}
-    6%{opacity:.95}
-    28%{opacity:.82}
-    60%{opacity:.35}
+    6%{opacity:.55}
+    28%{opacity:.42}
+    60%{opacity:.16}
     100%{opacity:0}
   }
 
@@ -277,14 +382,30 @@
 </head>
 <body data-temp="white">
 <div class="vignette"></div>
+<div class="aurora"></div>
+<div class="grid2"></div>
+<div class="grid"></div>
 <div class="halo"></div>
+<div class="beam"></div>
 <div class="dust"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+<div class="motes"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
 <div class="floor-glow"></div>
 
 <div class="app">
-  <div id="score">86,420</div>
+  <div class="hud">
+    <div class="hud-l">
+      <div class="title">世界核心</div>
+      <div id="score">86,420</div>
+      <div class="best">最高 <b id="best">0</b></div>
+    </div>
+    <div class="hud-r">
+      <div class="next-lb">下一颗</div>
+      <div id="next"><div class="in"><img src="gems/gem-08-diamond.png" alt=""></div></div>
+    </div>
+  </div>
 
-  <div id="next"><div class="in"><img src="gems/gem-08-diamond.png" alt=""></div></div>
+  <div id="combo"></div>
+  <div id="tip">拖动宝石 · 松手落子</div>
 
   <div id="stage" data-arena-w="384" data-arena-h="636" data-danger-offset="40">
     <div class="inner"></div>
@@ -301,6 +422,7 @@
     <div class="brk tl"></div><div class="brk tr"></div><div class="brk bl"></div><div class="brk br"></div>
     <div class="rail l"></div><div class="rail r"></div>
     <div class="scan"></div>
+    <div class="cavity"></div>
   </div>
 </div>
 
@@ -332,8 +454,10 @@ var Logic = (function(){
     var DT = 1 / 120;             // 固定步长（秒）—— 唯一的时间单位
 
     var MAX_LEVEL = 10;
-    /* 半径表：严格递增，13 级都塞得下（2×134=268 < 420，容器容量有限） */
-    var RADII = [0, 16, 22, 29, 38, 49, 62, 77, 94, 113, 134];
+    /* 半径表：严格递增。整体放大 1.4×（captain 调整）：
+       原值 [16,22,29,38,49,62,77,94,113,134] 下 1 级直径仅占容器宽 8.3%，
+       开局画面显得空；放大后 1 级占 11.5%、10 级占 97.9%（2×188=376 < 384 仍装得下）。 */
+    var RADII = [0, 22, 31, 41, 53, 69, 87, 108, 132, 158, 188];
     /* 合出该等级的得分（索引 = 合并后的等级；1 级不可被合出） */
     var SCORE = [0, 0, 10, 25, 50, 90, 150, 240, 380, 580, 900];
     var NAMES = ['', '石英', '紫水晶', '海蓝宝', '祖母绿', '红宝石',
@@ -884,6 +1008,11 @@ var Logic = (function(){
   var gemsBox = document.getElementById('gems');
   var dangerEl = document.getElementById('danger');
   var scoreEl = document.getElementById('score');
+  var bestEl = document.getElementById('best');
+  var comboEl = document.getElementById('combo');
+  var tipEl = document.getElementById('tip');
+  var bestScore = 0;
+  var tipHidden = false;
   var nextImg = document.querySelector('#next .in img');
   var nextBox = document.getElementById('next');
   var flash = document.getElementById('flash');
@@ -1059,6 +1188,8 @@ var Logic = (function(){
       if (!top || e.lv > top.lv) top = e;
     }
     if (!top) return;
+    /* 0) 连锁提示：本次落子引发的合并次数（≥2 才显示） */
+    showCombo(evs.length);
     /* 1) 全屏过曝 */
     burst(flash);
     /* 2) 能量环：写到**视口坐标**（#ring 是 fixed，margin -130 自居中） */
@@ -1118,6 +1249,11 @@ var Logic = (function(){
     if (S.score !== shownScore){
       shownScore = S.score;
       scoreEl.textContent = nf(S.score);
+      // 最高分：只在超过历史时刷新（本次会话内存态，不写盘）
+      if (S.score > bestScore){
+        bestScore = S.score;
+        if (bestEl) bestEl.textContent = nf(bestScore);
+      }
     }
     if (S.next !== shownNext){
       shownNext = S.next;
@@ -1125,6 +1261,16 @@ var Logic = (function(){
       nextImg.alt = L.NAMES[S.next];
       nextBox.dataset.lv = String(S.next);
     }
+  }
+
+  /* 连锁提示：合并发生后短暂弹出「连锁 ×N」，N 来自内核的链长度 */
+  var comboTimer = null;
+  function showCombo(n){
+    if (!comboEl || !n || n < 2) return;
+    comboTimer && clearTimeout(comboTimer);
+    comboEl.textContent = '连锁 ×' + n;
+    comboEl.classList.add('show');
+    comboTimer = setTimeout(function(){ comboEl.classList.remove('show'); }, 900);
   }
 
   /* ---------------- 输入 ---------------- */
@@ -1137,6 +1283,8 @@ var Logic = (function(){
     if (!S || S.ended) return;
     var rad = L.RADII[S.next];
     L.drop(S, clamp(aimX, rad, L.CW - rad));
+    // 首次落子后隐藏操作引导
+    if (!tipHidden && tipEl){ tipHidden = true; tipEl.classList.add('hide'); }
   }
   var dragging = false;
   stage.addEventListener('pointerdown', function(e){
