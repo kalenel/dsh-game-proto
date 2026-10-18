@@ -169,6 +169,67 @@
 
   .floor-glow{position:fixed;left:0;right:0;bottom:0;height:200px;pointer-events:none;z-index:0;
     background:radial-gradient(60% 100% at 50% 100%, rgba(var(--temp-rgb),.12) 0%, transparent 72%);}
+
+  /* ---------- 动态纵深：三层各自以不同速度呼吸/漂移，产生视差 ---------- */
+  /* ① 远景星云：极慢旋转 + 缩放，60 秒一圈，几乎察觉不到但画面"活" */
+  .nebula{
+    position:fixed;left:50%;top:44%;width:160vmax;height:160vmax;
+    margin:-80vmax 0 0 -80vmax;pointer-events:none;z-index:0;
+    background:
+      radial-gradient(38% 30% at 42% 40%, rgba(var(--temp-rgb),.13) 0%, transparent 62%),
+      radial-gradient(30% 26% at 62% 58%, rgba(var(--temp-rgb),.09) 0%, transparent 60%),
+      radial-gradient(24% 22% at 36% 64%, rgba(var(--temp-rgb),.07) 0%, transparent 58%);
+    filter:blur(42px);
+    animation:nebulaDrift 64s linear infinite;
+  }
+  @keyframes nebulaDrift{
+    0%   {transform:rotate(0deg)   scale(1)}
+    50%  {transform:rotate(180deg) scale(1.12)}
+    100% {transform:rotate(360deg) scale(1)}
+  }
+
+  /* ② 中层辉光带：横向缓慢平移，像能量在腔体外流动 */
+  .sheen{
+    position:fixed;left:-30%;right:-30%;top:0;bottom:0;pointer-events:none;z-index:0;
+    background:linear-gradient(104deg,
+      transparent 30%,
+      rgba(var(--temp-rgb),.055) 44%,
+      rgba(var(--temp-rgb),.10) 50%,
+      rgba(var(--temp-rgb),.055) 56%,
+      transparent 70%);
+    animation:sheenMove 13s ease-in-out infinite;
+  }
+  @keyframes sheenMove{
+    0%,100% {transform:translateX(-14%)}
+    50%     {transform:translateX(14%)}
+  }
+
+  /* ③ 核心脉动：容器底部的光晕缓慢心跳，4 秒一次 */
+  .pulse{
+    position:fixed;left:50%;bottom:6%;width:520px;height:320px;
+    transform:translateX(-50%);pointer-events:none;z-index:0;filter:blur(34px);
+    background:radial-gradient(50% 60% at 50% 100%, rgba(var(--temp-rgb),.26) 0%, transparent 70%);
+    animation:corePulse 4.2s ease-in-out infinite;
+  }
+  @keyframes corePulse{
+    0%,100% {opacity:.55;transform:translateX(-50%) scale(1)}
+    50%     {opacity:1;  transform:translateX(-50%) scale(1.09)}
+  }
+
+  /* ④ 极细扫描线：模拟"仪器在扫描"，2.6 秒一条，很淡 */
+  .sweep{
+    position:fixed;left:0;right:0;top:0;height:2px;pointer-events:none;z-index:1;
+    background:linear-gradient(90deg, transparent, rgba(var(--temp-rgb),.5), transparent);
+    filter:blur(1px);opacity:.32;
+    animation:sweepDown 6.5s linear infinite;
+  }
+  @keyframes sweepDown{
+    0%   {transform:translateY(-4vh); opacity:0}
+    8%   {opacity:.32}
+    92%  {opacity:.32}
+    100% {transform:translateY(104vh); opacity:0}
+  }
+
   .app{position:relative;z-index:2;height:100%;}
 
   /* ---------- HUD：左（标题/分数/最高） 右（下一颗） ---------- */
@@ -389,6 +450,10 @@
 <div class="beam"></div>
 <div class="dust"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
 <div class="motes"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+<div class="nebula"></div>
+<div class="sheen"></div>
+<div class="pulse"></div>
+<div class="sweep"></div>
 <div class="floor-glow"></div>
 
 <div class="app">
@@ -1217,6 +1282,10 @@ var Logic = (function(){
     if (!top) return;
     /* 0) 连锁提示：本次落子引发的合并次数（≥2 才显示） */
     showCombo(evs.length);
+    if (window.__audio){
+      window.__audio.merge(top.lv);
+      if (evs.length >= 2) window.__audio.chain(evs.length);
+    }
     /* 1) 全屏过曝 */
     burst(flash);
     /* 2) 能量环：写到**视口坐标**（#ring 是 fixed，margin -130 自居中） */
@@ -1309,6 +1378,7 @@ var Logic = (function(){
   function doDrop(){
     if (!S || S.ended) return;
     var rad = L.RADII[S.next];
+    if (window.__audio) window.__audio.drop();
     L.drop(S, clamp(aimX, rad, L.CW - rad));
     // 首次落子后隐藏操作引导
     if (!tipHidden && tipEl){ tipHidden = true; tipEl.classList.add('hide'); }
@@ -1526,6 +1596,199 @@ var Logic = (function(){
 
   window.__tower16Ready = true;
 })();
+</script>
+<script>
+/* ============================================================================
+ * CORE 音景引擎 —— 空灵 / 解压 / 空间感
+ * ----------------------------------------------------------------------------
+ * 设计原则（为什么这样做，不是随便加音效）：
+ *  1. **不刺耳**：全程用 sine / triangle 波 + 长衰减，不用方波锯齿。
+ *     方波在手机上会破音，且听感"电子游戏味"太重，不空灵。
+ *  2. **五声音阶**：合成音高走 C 大调五声（C D E G A），任何两个音叠在一起都不会
+ *     不协和 —— 这是"解压"的乐理基础。12 级宝石映射到 3 个八度的五声音阶。
+ *  3. **空间混响**：用 ConvolverNode + 程序生成的脉冲响应（噪声衰减），
+ *     不用外部音频文件（单文件约束）。听起来像在一个空房间里。
+ *  4. **环境铺底**：一条极低音量的持续 pad（两个略微失谐的 sine），
+ *     随时间缓慢起伏。不是"背景音乐"，是"空间本身在呼吸"。
+ *  5. **首次交互解锁**：浏览器要求用户手势后才能起 AudioContext，
+ *     所以第一次 pointerdown 才真正启动，之前静默。
+ * ========================================================================== */
+(function(){
+  'use strict';
+
+  var AC = null, master = null, reverb = null, padGain = null;
+  var started = false;
+  var muted = false;
+
+  /* 五声音阶（半音偏移，相对 C）。3 个八度共 15 个音，够 10 级用 */
+  var PENTA = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24, 26, 28, 31, 33];
+  var BASE_HZ = 130.81;   /* C3，低沉不刺耳 */
+
+  function hz(semitone){ return BASE_HZ * Math.pow(2, semitone / 12); }
+
+  /* 程序生成混响脉冲响应：指数衰减的白噪声。
+     2.8 秒、轻微高通，听起来像空旷的石室而不是浴室。 */
+  function makeIR(ctx, seconds, decay){
+    var rate = ctx.sampleRate;
+    var len = Math.floor(rate * seconds);
+    var buf = ctx.createBuffer(2, len, rate);
+    for (var ch = 0; ch < 2; ch++){
+      var d = buf.getChannelData(ch);
+      for (var i = 0; i < len; i++){
+        var t = i / len;
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay);
+      }
+    }
+    return buf;
+  }
+
+  function init(){
+    if (AC) return true;
+    try {
+      var Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return false;
+      AC = new Ctx();
+
+      master = AC.createGain();
+      master.gain.value = 0.0001;
+      master.connect(AC.destination);
+
+      /* 混响支路：干声 + 湿声并联 */
+      reverb = AC.createConvolver();
+      reverb.buffer = makeIR(AC, 2.8, 2.6);
+      var wet = AC.createGain();
+      wet.gain.value = 0.42;
+      reverb.connect(wet);
+      wet.connect(master);
+
+      return true;
+    } catch (e){ AC = null; return false; }
+  }
+
+  /* 一个音：sine 波 + 快起慢落 + 可选泛音层。
+     detune 让两层轻微失谐，产生"空灵"的拍频感。 */
+  function tone(freq, dur, vol, type, detuneCents){
+    if (!AC || muted) return;
+    var t0 = AC.currentTime;
+
+    var osc = AC.createOscillator();
+    osc.type = type || 'sine';
+    osc.frequency.value = freq;
+    if (detuneCents) osc.detune.value = detuneCents;
+
+    var g = AC.createGain();
+    var peak = Math.max(0.0001, vol);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(peak, t0 + 0.012);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+
+    osc.connect(g);
+    g.connect(master);        /* 干声 */
+    g.connect(reverb);        /* 湿声（混响只进不出 master，避免二次放大） */
+
+    osc.start(t0);
+    osc.stop(t0 + dur + 0.05);
+    osc.onended = function(){ try { osc.disconnect(); g.disconnect(); } catch (e){} };
+  }
+
+  /* 合成音：等级越高，音越高、越长、越亮。
+     同时叠一个高八度的弱泛音 —— 这是"水晶感"的来源。 */
+  function playMerge(level){
+    if (!AC) return;
+    var idx = Math.max(0, Math.min(PENTA.length - 1, level - 1));
+    var f = hz(PENTA[idx]);
+    var vol = 0.10 + Math.min(level, 10) * 0.012;
+    var dur = 1.1 + level * 0.16;
+
+    tone(f, dur, vol, 'sine');
+    tone(f * 2, dur * 0.55, vol * 0.34, 'sine', 6);   /* 高八度泛音，轻微失谐 */
+    if (level >= 5){
+      /* 高级合成再加一个五度，形成"和弦"感 */
+      tone(f * 1.5, dur * 0.8, vol * 0.26, 'triangle', -4);
+    }
+    if (level >= 8){
+      /* 顶级合成：加一个极高的弱音，像玻璃碎裂的余韵 */
+      tone(f * 3, dur * 0.4, vol * 0.14, 'sine', 10);
+    }
+  }
+
+  /* 落子音：短促、低沉、不打扰 */
+  function playDrop(){
+    if (!AC) return;
+    tone(72, 0.26, 0.055, 'sine');
+  }
+
+  /* 连击提示：连锁数越多，音越高（快速琶音） */
+  function playChain(n){
+    if (!AC || n < 2) return;
+    var count = Math.min(n, 6);
+    for (var i = 0; i < count; i++){
+      (function(k){
+        setTimeout(function(){
+          tone(hz(PENTA[Math.min(PENTA.length-1, 4 + k)]), 0.5, 0.05, 'sine');
+        }, k * 55);
+      })(i);
+    }
+  }
+
+  /* 环境铺底：两个极低音量的失谐 sine，缓慢起伏。
+     这是"空间在呼吸"，不是音乐。 */
+  function startPad(){
+    if (!AC || padGain) return;
+    padGain = AC.createGain();
+    padGain.gain.value = 0.0001;
+    padGain.connect(master);
+
+    var freqs = [65.41, 98.00, 130.81];    /* C2 / G2 / C3 —— 纯五度，永远协和 */
+    freqs.forEach(function(f, i){
+      var o = AC.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = f;
+      o.detune.value = (i - 1) * 7;        /* 轻微失谐，产生缓慢拍频 */
+      var g = AC.createGain();
+      g.gain.value = 0.5 / (i + 1);
+      o.connect(g); g.connect(padGain);
+      o.start();
+    });
+
+    /* 20 秒周期的缓慢起伏 */
+    (function breathe(){
+      if (!AC || !padGain) return;
+      var t = AC.currentTime;
+      padGain.gain.cancelScheduledValues(t);
+      padGain.gain.setValueAtTime(padGain.gain.value, t);
+      padGain.gain.linearRampToValueAtTime(0.028, t + 10);
+      padGain.gain.linearRampToValueAtTime(0.012, t + 20);
+      setTimeout(breathe, 20000);
+    })();
+  }
+
+  /* 首次用户手势才解锁 */
+  function unlock(){
+    if (started) return;
+    if (!init()) return;
+    started = true;
+    if (AC.state === 'suspended') AC.resume();
+    master.gain.setValueAtTime(0.0001, AC.currentTime);
+    master.gain.exponentialRampToValueAtTime(0.9, AC.currentTime + 1.6);
+    startPad();
+  }
+
+  window.addEventListener('pointerdown', unlock, { once: true });
+  window.addEventListener('touchstart', unlock, { once: true });
+
+  /* 对外接口 */
+  window.__audio = {
+    ready: function(){ return !!AC && started; },
+    state: function(){ return AC ? AC.state : 'none'; },
+    merge: playMerge,
+    drop: playDrop,
+    chain: playChain,
+    mute: function(v){ muted = !!v; if (master) master.gain.value = muted ? 0.0001 : 0.9; return muted; },
+    isMuted: function(){ return muted; }
+  };
+})();
+
 </script>
 </body>
 </html>
