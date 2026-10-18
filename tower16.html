@@ -1,0 +1,1356 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  《合成塔》tower16 —— **CORE 熔核**（外壳：_mock-i.html / art-director）
+                       **冲击波内核**（内核：tower15.html / physicist）
+  ============================================================================
+  这是本轮正式产物：物理 + 表现第一次合成在一起。
+
+  ## 内核来源（可审计）
+  从 tower15.html 的 "var Logic = (function(){" 到 "  })();" 原样切出（20299 B / 537 行），
+  **只替换 4 个几何常量**（外壳的物理区尺寸不同）：
+      第 5 行、第 6 行、第 9 行、第 73 行
+         CW       380 → 384        （外壳 data-arena-w=384）
+         CH       560 → 636        （外壳 data-arena-h=636）
+         DANGER_Y CH-90 → CH-40    （外壳 data-danger-offset=40：危险线距 stage 顶边 40px）
+         SPAWN_Y  CH+44 → CH-4     （出生点落在罐口**内侧**：出生在罐口之上时，
+                                     刚出生的宝石还没进过罐、不受罐口单向盖保护，会被冲击波顶飞出罐）
+  除这 4 行外，冲击波 / PBD / 合并判定 / 连锁代次 / 合并上限 /
+  罐口单向盖 **一个字符都没动**。校验脚本会打印这 4 行的 diff。
+
+  ## 接线（外壳元素 → 物理）
+      #stage   384×636 就是物理矩形，renderer 每帧从 getBoundingClientRect() 量
+      #cv      canvas 渲染位：瞄准线 / 落点 / 冲击波环 / 火花（宝石本身走 DOM，见下）
+      #gems    运行时生成 .gem（<img>），每帧只改 transform；外壳的 .gem 自发光与
+               .gem.merge-hot 是 CSS filter + var(--g)/var(--glow)，只有 DOM 能吃到
+      #danger  危险线：top 由内核 DANGER_Y 算出并写回，data-danger-offset 同步改写
+      #flash   每次合并整屏过曝（.burst，animationend 回 idle）
+      #ring    合并点能量环：left/top 写入**视口坐标**（#ring 是 position:fixed，
+               margin -130px 自居中），坐标由物理世界 (x,y) 换算到 stage 像素再加 stage 偏移
+      #score / #next>.in>img / body[data-temp]   HUD 与色温
+
+  ## 色温
+  body[data-temp] 随**盘面最高宝石等级**：1-3 cold / 4-6 amber / 7-9 red / 10 white。
+  只切 data-temp，不另写颜色 —— 分数、力场线、危险线、辉光全由外壳变量驱动。
+
+  ## 复核
+      node spike/_tower16-test.mjs     无头：内核来源 diff + 冲击波 + 色温 + 危险线 + 稳定性
+      node spike/_tower16-probe.mjs    浏览器：光爆/能量环/真指针/三视口 + 截图
+  ============================================================================
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>CORE 熔核 · 合成塔</title>
+<style>
+
+  /* =====================================================================
+     熔核 / CORE —— 原创视觉外壳
+     概念：你在冷却一颗星核；宝石是凝聚中的能量结晶；容器是力场边界。
+     色温：JS 改 body[data-temp] = cold | amber | red | white（1-3 / 4-6 / 7-9 / 10）
+     物理： #stage[data-arena-w=384][data-arena-h=636][data-danger-offset=40]
+     光爆： #flash.burst → flashBurst .16s（峰值 .95）；#ring.burst → ringBurst .18s
+     #ring 的 left/top 由 JS 写入合并点；#flash/#ring 的 data-state 供 CDP 断言
+     .gem.merge-hot → gemFlash .18s（前 60ms 光晕 ×1.6）
+     ===================================================================== */
+  :root{
+    --core-temp:#A9BFD6; --temp-rgb:169,191,214;
+    --core-dim:#5E7488; --core-bright:#EAF4FF;
+  }
+  /* 四档色温：背景辉光 / 力场线 / 分数 / 危险线 / 光爆 同步升温 */
+  body[data-temp="cold"]{ --core-temp:#A9BFD6; --temp-rgb:169,191,214; --core-dim:#5E7488; --core-bright:#EAF4FF; }
+  body[data-temp="amber"]{ --core-temp:#FFC46A; --temp-rgb:255,196,106; --core-dim:#9A6A2A; --core-bright:#FFE9C4; }
+  body[data-temp="red"]{ --core-temp:#FF6A4A; --temp-rgb:255,106,74; --core-dim:#A33222; --core-bright:#FFD0C0; }
+  body[data-temp="white"]{ --core-temp:#FFF3DA; --temp-rgb:255,243,218; --core-dim:#C9A97C; --core-bright:#FFFFFF; }
+
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden}
+  body{
+    --core-temp:#A9BFD6; --temp-rgb:169,191,214; --core-dim:#5E7488; --core-bright:#EAF4FF;
+    background-color:#03050A;
+    background-image:
+      radial-gradient(64% 42% at 50% 48%, rgba(var(--temp-rgb),.24) 0%, rgba(var(--temp-rgb),.06) 44%, transparent 68%),
+      radial-gradient(42% 30% at 14% 12%, rgba(84,72,192,.26) 0%, transparent 70%),
+      radial-gradient(38% 28% at 88% 20%, rgba(196,54,140,.20) 0%, transparent 72%),
+      radial-gradient(46% 32% at 14% 92%, rgba(18,98,176,.20) 0%, transparent 72%),
+      radial-gradient(40% 26% at 80% 88%, rgba(18,94,158,.16) 0%, transparent 72%),
+      radial-gradient(1.2px 1.2px at 22% 18%, rgba(222,236,255,.8) 99%, transparent 100%),
+      radial-gradient(1px 1px at 72% 9%, rgba(255,245,230,.75) 99%, transparent 100%),
+      radial-gradient(1px 1px at 88% 62%, rgba(200,225,255,.55) 99%, transparent 100%),
+      radial-gradient(1.4px 1.4px at 9% 70%, rgba(255,240,220,.6) 99%, transparent 100%),
+      radial-gradient(1px 1px at 44% 90%, rgba(210,235,255,.5) 99%, transparent 100%),
+      radial-gradient(1px 1px at 30% 52%, rgba(190,215,255,.4) 99%, transparent 100%);
+    background-repeat:no-repeat;
+    color:#E7F1FF;
+    font-family:"Bahnschrift","Segoe UI Light","Helvetica Neue",system-ui,sans-serif;
+    font-weight:300;
+    user-select:none;-webkit-font-smoothing:antialiased;
+  }
+  /* 宇宙暗角 + 星核照亮周围 */
+  .vignette{position:fixed;inset:0;pointer-events:none;z-index:0;
+    background:radial-gradient(120% 88% at 50% 48%, transparent 42%, rgba(0,0,0,.52) 100%);}
+  .halo{position:fixed;left:50%;top:48%;width:720px;height:720px;transform:translate(-50%,-50%);
+    pointer-events:none;z-index:0;filter:blur(18px);
+    background:radial-gradient(circle, rgba(var(--temp-rgb),.22) 0%, rgba(var(--temp-rgb),.06) 44%, transparent 64%);}
+  .dust{position:fixed;inset:0;pointer-events:none;z-index:0;}
+  .dust i{position:absolute;border-radius:50%;background:var(--core-temp);opacity:.35;
+    box-shadow:0 0 6px var(--core-temp);}
+  .dust i:nth-child(1){left:18px;top:300px;width:2px;height:2px;opacity:.5}
+  .dust i:nth-child(2){left:34px;top:520px;width:1px;height:1px;opacity:.4}
+  .dust i:nth-child(3){right:22px;top:240px;width:2px;height:2px;opacity:.45}
+  .dust i:nth-child(4){right:40px;top:600px;width:1px;height:1px;opacity:.35}
+  .dust i:nth-child(5){left:64px;top:760px;width:2px;height:2px;opacity:.3}
+  .dust i:nth-child(6){right:80px;top:800px;width:1px;height:1px;opacity:.3}
+  .dust i:nth-child(7){left:120px;top:88px;width:1px;height:1px;opacity:.4}
+  .dust i:nth-child(8){right:130px;top:80px;width:2px;height:2px;opacity:.35}
+
+  .floor-glow{position:fixed;left:0;right:0;bottom:0;height:200px;pointer-events:none;z-index:0;
+    background:radial-gradient(60% 100% at 50% 100%, rgba(var(--temp-rgb),.12) 0%, transparent 72%);}
+  .app{position:relative;z-index:2;height:100%;}
+
+  /* 分数：唯一的主信息 */
+  #score{
+    position:absolute;left:18px;top:10px;
+    font-size:76px;line-height:.95;font-weight:300;letter-spacing:.01em;
+    color:var(--core-temp);font-variant-numeric:tabular-nums;
+    text-shadow:
+      0 0 18px rgba(var(--temp-rgb),.45),
+      0 0 46px rgba(var(--temp-rgb),.22);
+  }
+
+  /* 下一颗：小块，切角，不抢 */
+  #next{
+    position:absolute;right:12px;top:12px;width:58px;height:58px;
+    clip-path:polygon(10px 0,100% 0,100% calc(100% - 10px),calc(100% - 10px) 100%,0 100%,0 10px);
+    background:var(--core-temp);
+  }
+  #next .in{
+    position:absolute;inset:1px;
+    clip-path:polygon(9px 0,100% 0,100% calc(100% - 9px),calc(100% - 9px) 100%,0 100%,0 9px);
+    background:#050A12;
+    display:flex;align-items:center;justify-content:center;
+  }
+  #next img{width:44px;height:44px;object-fit:contain;
+    filter:
+      drop-shadow(0 0 8px rgba(200,238,255,.65))
+      drop-shadow(0 0 20px rgba(120,170,255,.35));}
+
+  /* ================= 力场边界：物理区 384×636 ================= */
+  #stage{
+    position:absolute;left:3px;top:100px;width:384px;height:636px;
+    clip-path:polygon(26px 0,calc(100% - 26px) 0,100% 26px,100% calc(100% - 26px),calc(100% - 26px) 100%,26px 100%,0 calc(100% - 26px),0 26px);
+    background:
+      radial-gradient(78% 46% at 50% 100%, rgba(var(--temp-rgb),.22) 0%, rgba(var(--temp-rgb),.05) 52%, transparent 76%),
+      radial-gradient(68% 38% at 50% 0%, rgba(var(--temp-rgb),.12) 0%, transparent 72%),
+      linear-gradient(180deg,#03060D 0%,#02040A 44%,#03050C 100%);
+    box-shadow:inset 0 0 90px rgba(0,0,0,.85),inset 0 30px 70px rgba(0,0,0,.55);
+    overflow:hidden;
+  }
+  #stage::before{content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+    background:
+      radial-gradient(58% 34% at 50% 22%, rgba(var(--temp-rgb),.03) 0%, transparent 72%),
+      radial-gradient(40% 50% at 50% 100%, rgba(var(--temp-rgb),.03) 0%, transparent 70%);}
+  /* 内壁极淡渐变 */
+  #stage .inner{position:absolute;inset:0;z-index:1;pointer-events:none;
+    background:linear-gradient(90deg, rgba(0,0,0,.55) 0%, transparent 12%, transparent 88%, rgba(0,0,0,.55) 100%),
+      linear-gradient(180deg, rgba(0,0,0,.45) 0%, transparent 14%);}
+
+  /* 能量边线 / 切角 / 四角括号 */
+  .edge{position:absolute;background:var(--core-temp);opacity:.62;z-index:20;
+    box-shadow:0 0 5px rgba(var(--temp-rgb),.30);}
+  .edge.t{left:26px;right:26px;top:0;height:1px}
+  .edge.b{left:26px;right:26px;bottom:0;height:1px}
+  .edge.l{left:0;top:26px;bottom:26px;width:1px}
+  .edge.r{right:0;top:26px;bottom:26px;width:1px}
+  .cut{position:absolute;width:37px;height:1px;background:var(--core-temp);opacity:.52;z-index:20;
+    box-shadow:0 0 5px rgba(var(--temp-rgb),.28);}
+  .cut.tl{left:-5.5px;top:12.5px;transform:rotate(-45deg)}
+  .cut.tr{right:-5.5px;top:12.5px;transform:rotate(45deg)}
+  .cut.bl{left:-5.5px;bottom:12.5px;transform:rotate(45deg)}
+  .cut.br{right:-5.5px;bottom:12.5px;transform:rotate(-45deg)}
+  .brk{position:absolute;width:20px;height:20px;z-index:21;pointer-events:none;opacity:.35;
+    filter:drop-shadow(0 0 4px rgba(var(--temp-rgb),.4));}
+  .brk.tl{left:14px;top:14px;border-left:1px solid var(--core-temp);border-top:1px solid var(--core-temp)}
+  .brk.tr{right:14px;top:14px;border-right:1px solid var(--core-temp);border-top:1px solid var(--core-temp)}
+  .brk.bl{left:14px;bottom:14px;border-left:1px solid var(--core-temp);border-bottom:1px solid var(--core-temp)}
+  .brk.br{right:14px;bottom:14px;border-right:1px solid var(--core-temp);border-bottom:1px solid var(--core-temp)}
+  .rail{position:absolute;top:52px;bottom:52px;width:1px;z-index:19;opacity:.28;
+    background:linear-gradient(180deg,transparent,var(--core-temp) 18%,var(--core-dim) 50%,var(--core-temp) 82%,transparent);}
+  .rail.l{left:12px}
+  .rail.r{right:12px}
+  .rail::after{content:"";position:absolute;left:-2px;top:18%;width:5px;height:1px;background:var(--core-temp);
+    box-shadow:0 46px 0 var(--core-dim),0 112px 0 var(--core-temp),0 186px 0 var(--core-dim),0 260px 0 var(--core-temp),0 334px 0 var(--core-dim);}
+  .scan{position:absolute;left:0;right:0;height:1px;z-index:19;opacity:.22;pointer-events:none;
+    background:linear-gradient(90deg,transparent,rgba(var(--temp-rgb),.85),transparent);
+    animation:scan 9s linear infinite;}
+  @keyframes scan{0%{top:7%}100%{top:94%}}
+
+  /* 危险线：一条极细能量线，无文字 */
+  #danger{position:absolute;left:0;right:0;top:40px;height:2px;z-index:30;
+    background:var(--core-temp);opacity:.95;
+    box-shadow:0 0 0 1.5px rgba(0,0,0,.75),0 0 14px rgba(var(--temp-rgb),.6);}
+  #danger::after{content:"";position:absolute;left:0;right:0;top:1px;height:30px;
+    background:linear-gradient(180deg,rgba(var(--temp-rgb),.10),transparent);}
+
+  /* ================= 自发光宝石 ================= */
+  #gems{position:absolute;inset:0;z-index:19;pointer-events:none;}
+  .gem{position:absolute;object-fit:contain;
+    filter:
+      drop-shadow(0 0 calc(4px + var(--g) * 0.65px) rgba(var(--glow),.36))
+      drop-shadow(0 0 calc(9px + var(--g) * 1.3px) rgba(var(--glow),.11))
+      drop-shadow(0 8px 10px rgba(0,0,0,.55))
+      brightness(1.04) saturate(1.04);}
+  .gem.hero{
+    filter:
+      drop-shadow(0 0 calc(10px + var(--g) * 1.0px) rgba(var(--glow),.75))
+      drop-shadow(0 0 calc(22px + var(--g) * 2.0px) rgba(var(--glow),.30))
+      drop-shadow(0 10px 12px rgba(0,0,0,.55))
+      brightness(1.10) saturate(1.08);}
+  .core-halo{position:absolute;left:41px;top:-3px;width:300px;height:300px;z-index:1;pointer-events:none;
+    border-radius:50%;filter:blur(6px);
+    background:radial-gradient(circle, rgba(255,244,214,.12) 0%, rgba(255,198,120,.04) 46%, transparent 68%);}
+  .orbit{position:absolute;z-index:4;pointer-events:none;border:1px solid rgba(var(--temp-rgb),.35);
+    border-radius:50%;box-shadow:0 0 8px rgba(var(--temp-rgb),.18);}
+  .orbit.a{left:63px;top:110px;width:256px;height:74px;transform:rotate(-18deg)}
+  .orbit.b{left:88px;top:120px;width:206px;height:56px;transform:rotate(24deg);border-color:rgba(var(--temp-rgb),.22)}
+
+  /* canvas 渲染位：在静态宝石之上，默认透明 */
+  #cv{position:absolute;inset:0;width:100%;height:100%;z-index:12;display:block;background:transparent;pointer-events:none;}
+
+  /* ================= 全屏光爆 ================= */
+  #flash{position:fixed;inset:0;z-index:100;pointer-events:none;opacity:0;
+    background:
+      radial-gradient(circle at 50% 52%, #FFFFFF 0%, rgba(var(--temp-rgb),.98) 22%, rgba(var(--temp-rgb),.55) 50%, rgba(var(--temp-rgb),0) 78%);
+    mix-blend-mode:screen;}
+  #flash.burst{animation:flashBurst .16s cubic-bezier(.12,.75,.2,1) 1 both;}
+  @keyframes flashBurst{
+    0%{opacity:0}
+    6%{opacity:.95}
+    28%{opacity:.82}
+    60%{opacity:.35}
+    100%{opacity:0}
+  }
+
+  /* 合并点能量环：left/top 由 JS 写入（CSS 不写死位置） */
+  #ring{
+    position:fixed;left:0;top:0;width:260px;height:260px;
+    margin-left:-130px;margin-top:-130px;border-radius:50%;
+    border:3px solid var(--core-temp);pointer-events:none;z-index:101;opacity:0;
+    box-shadow:0 0 0 1px rgba(0,0,0,.35),0 0 26px rgba(var(--temp-rgb),.8),inset 0 0 26px rgba(var(--temp-rgb),.45);
+  }
+  #ring.burst{animation:ringBurst .18s cubic-bezier(.1,.8,.2,1) 1 both;}
+  @keyframes ringBurst{
+    0%{transform:scale(.18);opacity:0}
+    8%{opacity:.95}
+    30%{transform:scale(.82);opacity:.82}
+    100%{transform:scale(1.75);opacity:0}
+  }
+
+  /* 合并瞬间周边宝石：光晕放大 1.6×（前 60ms） */
+  .gem.merge-hot{animation:gemFlash .18s ease-out 1 both;}
+  @keyframes gemFlash{
+    0%{filter:drop-shadow(0 0 calc(4px + var(--g) * 0.65px) rgba(var(--glow),.36)) drop-shadow(0 0 calc(9px + var(--g) * 1.3px) rgba(var(--glow),.11)) drop-shadow(0 8px 10px rgba(0,0,0,.55)) brightness(1.04) saturate(1.04);}
+    8%,33%{filter:drop-shadow(0 0 calc(6.4px + var(--g) * 1.04px) rgba(var(--glow),.52)) drop-shadow(0 0 calc(14.4px + var(--g) * 2.08px) rgba(var(--glow),.18)) drop-shadow(0 8px 10px rgba(0,0,0,.55)) brightness(1.12) saturate(1.06);}
+    100%{filter:drop-shadow(0 0 calc(4px + var(--g) * 0.65px) rgba(var(--glow),.36)) drop-shadow(0 0 calc(9px + var(--g) * 1.3px) rgba(var(--glow),.11)) drop-shadow(0 8px 10px rgba(0,0,0,.55)) brightness(1.04) saturate(1.04);}
+  }
+
+  /* ===== tower16 接线补丁（只有下面这些，其余材质/配色一行未动） ===== */
+  html,body{overflow:hidden}
+  .app{transform-origin:top center}          /* 窄屏整体等比缩，物理按 #stage 实测矩形自适应 */
+  .gem{will-change:transform}                 /* 每帧只改 transform，不新建 DOM */
+  #stage{touch-action:none}
+  /* 结算层：CORE 原稿没有，补一个同语言的极简层（只用 --core-temp / --temp-rgb） */
+  #over{position:fixed;inset:0;z-index:90;display:none;place-items:center;
+    background:radial-gradient(circle at 50% 46%, rgba(3,5,10,.55) 0%, rgba(2,4,9,.92) 72%);}
+  #over.on{display:grid}
+  #over .ov{position:relative;min-width:260px;padding:26px 30px 22px;text-align:center;
+    border:1px solid var(--core-temp);background:rgba(4,8,16,.72);
+    clip-path:polygon(14px 0,100% 0,100% calc(100% - 14px),calc(100% - 14px) 100%,0 100%,0 14px);
+    box-shadow:0 0 34px rgba(var(--temp-rgb),.28),inset 0 0 40px rgba(var(--temp-rgb),.08);}
+  #over .k{font-size:11px;letter-spacing:.42em;color:rgba(var(--temp-rgb),.85)}
+  #over .v{font-size:64px;font-weight:300;line-height:1.1;color:var(--core-temp);
+    font-variant-numeric:tabular-nums;text-shadow:0 0 22px rgba(var(--temp-rgb),.5)}
+  #over .s{font-size:10px;letter-spacing:.24em;color:rgba(var(--temp-rgb),.6);margin-top:6px}
+  #over .h{margin-top:18px;font-size:11px;letter-spacing:.3em;color:var(--core-dim)}
+</style>
+</head>
+<body data-temp="white">
+<div class="vignette"></div>
+<div class="halo"></div>
+<div class="dust"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+<div class="floor-glow"></div>
+
+<div class="app">
+  <div id="score">86,420</div>
+
+  <div id="next"><div class="in"><img src="gems/gem-08-diamond.png" alt=""></div></div>
+
+  <div id="stage" data-arena-w="384" data-arena-h="636" data-danger-offset="40">
+    <div class="inner"></div>
+    <div class="core-halo"></div>
+    <div class="orbit a"></div><div class="orbit b"></div>
+
+    <div id="gems"></div>
+
+    <canvas id="cv" width="384" height="636" aria-hidden="true"></canvas>
+
+    <div id="danger"></div>
+    <div class="edge t"></div><div class="edge b"></div><div class="edge l"></div><div class="edge r"></div>
+    <div class="cut tl"></div><div class="cut tr"></div><div class="cut bl"></div><div class="cut br"></div>
+    <div class="brk tl"></div><div class="brk tr"></div><div class="brk bl"></div><div class="brk br"></div>
+    <div class="rail l"></div><div class="rail r"></div>
+    <div class="scan"></div>
+  </div>
+</div>
+
+<div id="flash" data-state="idle" data-anim="flashBurst" data-duration="160ms" data-peak="0.95"></div>
+<!-- 能量环演示位置（世界核心中心）；JS 合并时用 ring.style.left/top 覆盖 -->
+<div id="ring" data-state="idle" data-anim="ringBurst" data-duration="180ms" data-peak="0.95" style="left:194px;top:247px"></div>
+
+<div id="over"><div class="ov">
+  <div class="k">CORE OVERLOAD</div>
+  <div class="v" id="ovScore">0</div>
+  <div class="s" id="ovSub">最高结晶 · 石英</div>
+  <div class="h">轻触重启</div>
+</div></div>
+
+<script>
+/* ==========================================================================
+   ① 物理内核 —— tower15 原样（只改了 4 行几何常量）
+   ========================================================================== */
+var Logic = (function(){
+    'use strict';
+
+    /* ---------------- 世界常量 ---------------- */
+    var CW = 384;                 // 内腔宽（世界单位）。CORE 外壳的物理区宽 = 384
+    var CH = 636;                 // 内腔高  ⇒ 384/636 = 0.604（CORE 外壳的物理区高）
+    var WALL = 18;                // 画出来的墙厚（渲染用，不参与物理）
+    var TOP_PAD = 118;            // 容器上沿以上的「持握区」高度（渲染用）
+    var DANGER_Y = CH - 90;       // 危险线高度（y 自**底部**起算，py(y)=oy-y*s）。CH-40 会让线贴到罐口
+                                  // （= 出生点 CH-4 下方仅 36 单位），整条线形同虚设；取 CH-90 与 tower15 同口径
+    var DT = 1 / 120;             // 固定步长（秒）—— 唯一的时间单位
+
+    var MAX_LEVEL = 10;
+    /* 半径表：严格递增，13 级都塞得下（2×134=268 < 420，容器容量有限） */
+    var RADII = [0, 16, 22, 29, 38, 49, 62, 77, 94, 113, 134];
+    /* 合出该等级的得分（索引 = 合并后的等级；1 级不可被合出） */
+    var SCORE = [0, 0, 10, 25, 50, 90, 150, 240, 380, 580, 900];
+    var NAMES = ['', '石英', '紫水晶', '海蓝宝', '祖母绿', '红宝石',
+                 '托帕石', '蓝宝石', '钻石', '龙晶', '世界核心'];
+    var FILES = ['', 'gems/gem-01-quartz.png', 'gems/gem-02-amethyst.png',
+                 'gems/gem-03-aquamarine.png', 'gems/gem-04-emerald.png',
+                 'gems/gem-05-ruby.png', 'gems/gem-06-topaz.png',
+                 'gems/gem-07-sapphire.png', 'gems/gem-08-diamond.png',
+                 'gems/gem-09-dragoncrystal.png', 'gems/gem-10-worldcore.png'];
+    /* 掉落的只有 1..5 级（权重和 = 1）；6..10 级只能合成得到 */
+    var NEXT_W = [0.32, 0.28, 0.21, 0.13, 0.06];
+
+    /* ---------------- 物理调参（稳定优先，PBD） ----------------
+       用的是 Position-Based Dynamics 的思路：**速度只从位置变化反推**。
+       为什么不用「先冲量、再修正位置」：实测那一版会留下"位置被卡住、
+       速度却一直存在"的幽灵速度 —— 一局静置 8 秒后还有 4 颗宝石
+       |v|=37 单位/秒、坐标却一动不动（x/y 8 秒内一位不差），静止判定永远
+       收敛不了，越线死亡也就永远不触发（300 手都结束不了一局）。
+       改成 PBD 后：位置被接触卡住 ⇒ 位移 = 0 ⇒ 速度 = 0 ⇒ 立刻判静止。
+       而且「落点很深 → 被推出来 → 反推出向上速度」本身就是一个自然的反弹，
+       不需要再手写恢复系数。 */
+    var GRAVITY = 2000;           // 单位/秒²
+    var MAX_V = 1500;             // 速度上限：1500*(1/120)=12.5 单位/步 << 最小直径 32，不穿模
+    var AIR_DRAG = 0.18;          // 每秒速度衰减比例
+    var POS_PCT = 0.85;           // 每次迭代消掉的穿透比例
+    var MAX_CORR = 8;             // 单次迭代最大位置修正（防止大宝石合并时把邻居瞬移弹飞）
+    var ITER = 8;                 // 位置修正迭代次数
+    var VEL_KEEP = 0.98;          // 每步速度保留比例（PBD 的数值阻尼）
+    var VEL_LIM_MIN = 300;        // 反推速度的下限额度（否则贴墙的圆会被"粘"在墙上）
+    var VEL_LIM_K = 1.15;         // …上限 = 进来时的速度 × 1.15 + 40，防止合并把人弹飞
+    var VEL_LIM_ADD = 40;
+    var MERGE_SLOP = 1.2;         // 合并的数值容差：dist ≤ r1+r2+slop 即视为接触
+    var REST_DISP = 0.45;         // 一步位移小于它（≈54 单位/秒）就认为「没在动」
+    var SLEEP_T = 0.30;           // 持续多久算静止（秒）
+
+    /* ---------------- 冲击波（本轮的原创机制） ----------------
+       每次合并从**合并点**向外发一圈径向速度冲量，强度与半径随合并后的等级递增。
+       PBD 里速度是由位移反推的，所以这里改的是「本步要走的位移」：
+       doMerge 在 predict 之前跑，vx/vy 一加，本步位置就真的多走一段，
+       derive 再从位移把速度反推回来 —— 宝石是真的被推开了，不是特效。
+       · falloff 用 (1-d/R)^POW：同一条射线上「近的快、远的慢」，
+         两者的速度差正好把中间的同级宝石挤到一起 ⇒ 连锁的来源。
+       · 大宝石被推得少（sqrt(合并半径 / 自身半径)）：小石头飞、大石头挪。
+       · 上限 MERGE_CAP：单次落子最多合多少次，防止无限连锁把盘面清空。 */
+    var SHOCK_ON_DEFAULT = true;
+    var SHOCK_POWER_BASE = 600;   // 合并点处的速度增量（世界单位/秒）
+    var SHOCK_POWER_PER_LV = 220; // 每高一级加多少
+    var SHOCK_RANGE_K = 5.5;      // 影响半径 = 合并半径 × K + BASE
+    var SHOCK_RANGE_BASE = 52;
+    var SHOCK_FALLOFF_POW = 1.5;  // 衰减指数（越大 = 近处越狠、远处越温和）
+    var SHOCK_MASS_K = 0.5;       // 质量衰减指数
+    var SHOCK_UP_K = 0.5;         // 向上分量的保留比例（<1 = 开顶丹炉把向上的冲量泄掉）
+    var SHOCK_SIGN = 1;           // +1 = 向外炸开，-1 = 向内坍缩（实验用）
+    var SHOCK_DOWN_K = 1.2;       // 向下分量的保留比例（>1 = 往罐底压，帮堆叠压实）
+    var MERGE_CAP = 48;           // 单次落子的合并数上限
+    var CHAIN_WINDOW = 16;        // 多少 tick 内被冲击波碰过才算同一次连锁（0.133s）
+                                  // 90 tick 那版会让「隔 0.7 秒的无关合并」也算进连锁，gen 一路飙到 41
+    var DROP_CD = 0.18;           // 落子冷却（秒）
+    var SPAWN_Y = CH - 4;         // 出生点：罐口内 4 单位（出生在罐口之上会被冲击波顶飞出罐，实测 spill=13）
+    var SPAWN_VY = -40;           // 出生时给一点初速，避免第一帧就被判成静止
+    var MAX_BODIES = 160;
+
+    /* ---------------- 工具 ---------------- */
+    function clamp(v, lo, hi){ return v < lo ? lo : (v > hi ? hi : v); }
+
+    /* FNV-1a：种子 → 32 位整数。同一种子永远同一起点。 */
+    function hashSeed(seed){
+      var str = String(seed), h = 2166136261;
+      for (var i = 0; i < str.length; i++){
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      h = h >>> 0;
+      return h === 0 ? 0x9E3779B9 : h | 0;
+    }
+
+    /* mulberry32：状态完全存在 state.rng 里，不碰任何全局随机源 */
+    function rnd(s){
+      s.rng = (s.rng + 0x6D2B79F5) | 0;
+      var t = s.rng;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+
+    function pickLevel(s){
+      var r = rnd(s), acc = 0;
+      for (var i = 0; i < NEXT_W.length; i++){
+        acc += NEXT_W[i];
+        if (r < acc) return i + 1;
+      }
+      return 1;
+    }
+
+    /* ---------------- 刚体 ---------------- */
+    function makeBody(s, lv, x, y, vx, vy){
+      var r = RADII[lv];
+      var m = r * r;                 // 质量 ∝ 面积
+      return {
+        id: s.idc++, lv: lv, x: x, y: y, vx: vx || 0, vy: vy || 0,
+        px: x, py: y,              // 上一步的位置（PBD 反推速度用）
+        r: r, ima: 1 / m,          // 逆质量（位置修正的权重）
+        rest: false, restT: 0, pen: 0, disp: 0, spd: 0, overT: 0,
+        gen: 0, genTick: 0,        // 连锁代次：最后一次被第几代冲击波碰到
+        entered: 0,                // 是否进过罐内（罐口单向盖只盖进过罐的）
+        ang: 0,                     // 视觉滚动角
+        born: s.tick
+      };
+    }
+
+    function addBody(s, lv, x, y, vx, vy){
+      var b = makeBody(s, lv, x, y, vx, vy);
+      s.bodies.push(b);
+      s.seq++;
+      return b;
+    }
+
+    /* ---------------- 合并 ---------------- */
+    /* 判定在**每步最前面**循环执行：新圆可以立刻再触发同级合并（连锁）。 */
+    function mergePass(s){
+      var guard = 0;
+      while (guard++ < 200){
+        /* 边界保护：单次落子的合并数封顶，否则一次落子可能无限连锁清空盘面 */
+        if (s.dropMerges >= MERGE_CAP){ s.capHit = 1; break; }
+        var bs = s.bodies, n = bs.length;
+        var fi = -1, fj = -1;
+        for (var i = 0; i < n && fi < 0; i++){
+          var a = bs[i];
+          if (a.lv >= MAX_LEVEL) continue;   // 满级不再合并
+          for (var j = i + 1; j < n; j++){
+            var b = bs[j];
+            if (b.lv !== a.lv) continue;     // 只有同级才合并
+            var dx = b.x - a.x, dy = b.y - a.y;
+            var rr = a.r + b.r + MERGE_SLOP;
+            if (dx * dx + dy * dy <= rr * rr){ fi = i; fj = j; break; }
+          }
+        }
+        if (fi < 0) break;
+        doMerge(s, fi, fj);
+      }
+    }
+
+    /* 半径 / 强度都随合并后的等级递增 */
+    function shockRange(lv){ return RADII[lv] * SHOCK_RANGE_K + SHOCK_RANGE_BASE; }
+    function shockPower(lv){ return SHOCK_POWER_BASE + SHOCK_POWER_PER_LV * lv; }
+
+    /* 从 (ox,oy) 向外推一圈。gen = 这次冲击波的连锁代次。
+       返回被推到的宝石数（0 表示这圈什么都没碰到）。 */
+    function applyShock(s, ox, oy, lv, gen, srcId){
+      var range = shockRange(lv);
+      var power = shockPower(lv);
+      var refR = RADII[lv];
+      var bs = s.bodies, hit = 0, hitDv = 0;
+      for (var i = 0; i < bs.length; i++){
+        var b = bs[i];
+        if (b.id === srcId) continue;              // 合并出来的那颗自己不吃自己
+        var dx = b.x - ox, dy = b.y - oy;
+        var d2 = dx * dx + dy * dy;
+        if (d2 >= range * range) continue;
+        var d = Math.sqrt(d2);
+        if (d < 1e-6){ dx = 0; dy = 1; d = 1e-6; }  // 正好重合：往上推，别除零
+        var fall = 1 - d / range;
+        fall = Math.pow(fall, SHOCK_FALLOFF_POW);
+        var massK = Math.sqrt(refR / b.r);          // 越大越推不动
+        var dv = power * fall * massK;
+        var dvx = SHOCK_SIGN * (dx / d) * dv, dvy = SHOCK_SIGN * (dy / d) * dv;
+        if (dvy > 0) dvy *= SHOCK_UP_K;             // 向上那一路单独打折
+        else dvy *= SHOCK_DOWN_K;                   // 向下那一路往罐底压
+        b.vx += dvx;
+        b.vy += dvy;
+        /* 丹炉开顶但**不许把丹石顶出炉口**：向上的速度压到「刚好升到罐口下方」。
+           没有这一条时实测有宝石被炸飞出罐（结束原因里出现 spill），
+           玩家会因为一次合成而莫名其妙地输 —— 这是设计缺陷，不是真实物理。 */
+        if (b.vy > 0 && b.y <= CH){
+          /* 以「整颗宝石的顶点」为准：room = 罐口 − 半径 − 当前 y。
+             只按圆心算的话，大宝石仍会把半个身子顶出罐口，再被挤压挤飞。
+             也不许夹「已经在罐口之上」的宝石：那颗正在下落（出生点就在 CH+44），
+             把它夹停会悬在罐口外不动，反而变成「整颗挤出」。 */
+          var room = CH - 20 - b.r - b.y;
+          if (room < 0) room = 0;
+          var vcap = Math.sqrt(2 * GRAVITY * room);
+          if (b.vy > vcap) b.vy = vcap;
+        }
+        if (dv > hitDv) hitDv = dv;
+        if (gen > b.gen) b.gen = gen;
+        b.genTick = s.tick;
+        hit++;
+      }
+      s.shockCount++;
+      s.shockHitTotal += hit;
+      if (hit > 0){
+        s.events.push({ t: 'shock', x: ox, y: oy, lv: lv, range: range,
+                        gen: gen, hit: hit, power: power, dv: hitDv });
+      }
+      return hit;
+    }
+
+    function doMerge(s, i, j){
+      var bs = s.bodies;
+      var a = bs[i], b = bs[j];
+      var lv = a.lv + 1;                       // 同级 ⇒ 等质量 ⇒ 中点就是质心
+      var mx = (a.x + b.x) * 0.5, my = (a.y + b.y) * 0.5;
+      var mvx = (a.vx + b.vx) * 0.5, mvy = (a.vy + b.vy) * 0.5;
+      var nb = addBody(s, lv, mx, my, mvx, mvy);
+      /* 先 push 再 splice：i/j 都在新元素之前，下标不受影响 */
+      bs.splice(j, 1);
+      bs.splice(i, 1);
+
+      /* 连锁代次：被第 N 代冲击波碰过的两颗合起来 ⇒ 第 N+1 代。
+         超过 CHAIN_WINDOW 没被碰过就重新从第 1 代算起。 */
+      var ga = (s.tick - a.genTick <= CHAIN_WINDOW) ? a.gen : 0;
+      var gb = (s.tick - b.genTick <= CHAIN_WINDOW) ? b.gen : 0;
+      var gen = 1 + (ga > gb ? ga : gb);
+      nb.gen = gen;
+      nb.genTick = s.tick;
+
+      var pts = SCORE[lv];
+      s.score += pts;
+      s.merges++;
+      s.chain++;
+      s.dropMerges++;
+      s.genSum += gen;
+      if (gen > s.genMax) s.genMax = gen;
+      if (gen > s.dropMaxGen) s.dropMaxGen = gen;
+      if (lv > s.maxLevel) s.maxLevel = lv;
+      s.events.push({ t: 'merge', lv: lv, x: mx, y: my, pts: pts,
+                      chain: s.chain, gen: gen, id: nb.id });
+
+      /* 把上一代结束的那颗也补上代次，让它的邻座继续传下去 */
+      if (s.shockOn) applyShock(s, mx, my, lv, gen, nb.id);
+      return nb;
+    }
+
+    /* ---------------- ① 预测（半隐式欧拉，固定 DT） ----------------
+       只动位置，不动「逻辑上的速度」：速度是位置求解完再反推出来的。
+       静止体也照样预测重力 —— 它被接触顶回来时位移为 0，速度自然又是 0，
+       而一旦支撑被合并掉，重力会让它真的往下掉，「睡着的圆悬空」不会发生。 */
+    function predict(s){
+      var bs = s.bodies;
+      var d = 1 - AIR_DRAG * DT;
+      for (var i = 0; i < bs.length; i++){
+        var b = bs[i];
+        b.px = b.x; b.py = b.y;
+        b.vy -= GRAVITY * DT;
+        b.vx *= d; b.vy *= d;
+        var sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+        if (sp > MAX_V){
+          var k = MAX_V / sp;
+          b.vx *= k; b.vy *= k;
+        }
+        b.x += b.vx * DT;
+        b.y += b.vy * DT;
+        if (!b.entered && b.y < CH) b.entered = 1;   // 进过罐内，从此受罐口单向盖约束
+        /* 安全网：真出 NaN 也不能让整盘烂掉。计数暴露给测试，nanFix 必须为 0。 */
+        if (!isFinite(b.x) || !isFinite(b.y) || !isFinite(b.vx) || !isFinite(b.vy)){
+          b.x = CW * 0.5; b.y = CH * 0.5; b.vx = 0; b.vy = 0;
+          s.nanFix++;
+        }
+      }
+    }
+
+    /* ---------------- ② 位置求解（唯一改变位置的地方） ----------------
+       质心加权 + 8 次迭代。墙/底在**每次迭代**都夹一遍，所以穿墙在结构上
+       不可能发生 —— 不是靠调参，是靠「最后一步一定是夹取」。 */
+    function solve(s){
+      var bs = s.bodies, n = bs.length, it, i, j;
+      for (it = 0; it < ITER; it++){
+        for (i = 0; i < n; i++){
+          var a = bs[i];
+          for (j = i + 1; j < n; j++){
+            var b = bs[j];
+            var dx = b.x - a.x, dy = b.y - a.y;
+            var rs = a.r + b.r;
+            var d2 = dx * dx + dy * dy;
+            if (d2 >= rs * rs) continue;          // 没碰：最常见分支，放最前面
+            var d = Math.sqrt(d2), nx, ny;
+            if (d < 1e-6){ nx = 1; ny = 0; d = 1e-6; }  // 完全重合：给定方向，避免除零
+            else { nx = dx / d; ny = dy / d; }
+            var pen = rs - d;
+            var corr = pen * POS_PCT;
+            if (corr > MAX_CORR) corr = MAX_CORR;
+            var tot = a.ima + b.ima;
+            var ka = a.ima / tot, kb = b.ima / tot;
+            a.x -= nx * corr * ka; a.y -= ny * corr * ka;
+            b.x += nx * corr * kb; b.y += ny * corr * kb;
+            if (pen > a.pen) a.pen = pen;
+            if (pen > b.pen) b.pen = pen;
+          }
+        }
+        /* 墙与底：每轮都夹一次 ⇒ 墙永远赢 */
+        for (i = 0; i < n; i++){
+          var w = bs[i];
+          if (w.x < w.r) w.x = w.r;
+          else if (w.x > CW - w.r) w.x = CW - w.r;
+          if (w.y < w.r) w.y = w.r;
+          /* 罐口单向盖：罐里的宝石可以被冲击波顶到罐口，但不能**整颗飞出去**
+             （往下落的宝石 vy<0，不受影响）。没有这一条时实测宝石会被挤到
+             y=720（罐口 560 之上 160），玩家会因为一次合成莫名输掉。 */
+          if (w.entered && w.y - w.r > CH){
+            w.y = CH + w.r;
+            if (w.vy > 0) w.vy = 0;
+          }
+        }
+      }
+    }
+
+    /* ---------------- ③ 速度反推 + 静止判定 ----------------
+       v = (x - x_prev) / DT。
+       · 位置被接触顶回原处 ⇒ 位移 0 ⇒ 速度 0 ⇒ 静止（这是「不永久抖动」的根）。
+       · 落得很深被顶出来 ⇒ 反推出向上的速度 ⇒ 自然反弹。
+       · 上限 = max(进来时速度 × 1.15 + 40, 300)：合并瞬间把邻居顶开时，
+         修正量再大也不会变成弹射器。 */
+    function derive(s){
+      var bs = s.bodies;
+      for (var i = 0; i < bs.length; i++){
+        var b = bs[i];
+        var dx = b.x - b.px, dy = b.y - b.py;
+        var nvx = dx / DT, nvy = dy / DT;
+        var sp = Math.sqrt(nvx * nvx + nvy * nvy);
+        var vin = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+        var lim = vin * VEL_LIM_K + VEL_LIM_ADD;
+        if (lim < VEL_LIM_MIN) lim = VEL_LIM_MIN;
+        if (sp > lim){
+          var k = lim / sp;
+          nvx *= k; nvy *= k;
+          sp = lim;
+        }
+        b.vx = nvx * VEL_KEEP;
+        b.vy = nvy * VEL_KEEP;
+        b.spd = sp;
+        b.disp = Math.sqrt(dx * dx + dy * dy);
+        b.ang += dx / b.r;            // 滚动：横向位移 → 视觉转角
+        if (b.disp < REST_DISP) b.restT += DT; else b.restT = 0;
+        if (b.restT >= SLEEP_T){
+          b.rest = true;
+          b.vx = 0; b.vy = 0;         // 硬清零 = 永久抖动的刹车
+        } else {
+          b.rest = false;
+        }
+        b.pen = 0;
+      }
+    }
+
+    /* ---------------- 越线结束 ----------------
+       主规则（契约要求）：**任意静止圆的顶点高于危险线 ⇒ 立刻结束**。
+       实测补上的两条保险丝（都是被真实盘面逼出来的，不是想当然）：
+       ① 「卡在线上」：被挤压的圆可能既不动、又永远达不到 rest 的判定，
+          于是一局怎么都结束不了（PBD 之前实测 300 手跑完一局都没结束）。
+          这里用「顶点过线 + 一步位移 < 1.2 单位」累计 0.45 秒。
+          下落中的宝石位移有 5~12 单位/步，不会被误判 —— 实测下落穿过
+          危险线的最大连续时间是 0.375 秒。
+       ② 「溢出罐口」：圆心跑到容器上沿 30 单位以上（被挤飞出去了）⇒ 立刻结束。
+          没有这条时实测有 5867 个「宝石跑到罐口以上」的步数。 */
+    var OVER_STUCK_T = 0.45;
+    var SPILL_Y = CH + 160;   // 必须远高于出生点（SPAWN_Y = CH+44）与冲击波的顶升上限
+
+    function gameOverCheck(s){
+      var bs = s.bodies;
+      for (var i = 0; i < bs.length; i++){
+        var b = bs[i];
+        var top = b.y + b.r;
+        if (b.rest && top > DANGER_Y){
+          return finish(s, 'rest', b);
+        }
+        if (top > DANGER_Y && b.disp < 1.2){
+          b.overT += DT;
+          if (b.overT >= OVER_STUCK_T) return finish(s, 'stuck', b);
+        } else {
+          b.overT = 0;
+        }
+        if (b.y > SPILL_Y){
+          return finish(s, 'spill', b);
+        }
+      }
+      return false;
+    }
+
+    function finish(s, why, b){
+      s.ended = true;
+      s.endedAt = s.tick;
+      s.endReason = why;
+      s.events.push({ t: 'over', reason: why, lv: b.lv, x: b.x, y: b.y, id: b.id });
+      return true;
+    }
+
+    /* ---------------- 一步 ---------------- */
+    function tick(s){
+      s.tick++;
+      if (s.cd > 0){ s.cd -= DT; if (s.cd < 0) s.cd = 0; }
+      s.chain = 0;
+      mergePass(s);                     // ① 先合并（新圆立刻可以参与连锁）
+      predict(s);                       // ② 重力 + 阻尼 + 速度上限（固定 DT）
+      solve(s);                         // ③ 圆-圆 + 墙/底（8 次迭代，只动位置）
+      derive(s);                        // ④ 速度从位移反推 + 静止判定
+      if (!s.ended) gameOverCheck(s);   // ⑤ 越线结束
+    }
+
+    /* ---------------- 公开 API ---------------- */
+    function create(seed){
+      if (seed === undefined || seed === null) seed = 1;
+      var s = {
+        seed: seed, rng: hashSeed(seed),
+        tick: 0, cd: 0, score: 0, ended: false, endedAt: 0, endReason: '',
+        next: 1, bodies: [], idc: 1, seq: 0,
+        merges: 0, maxLevel: 1, chain: 0, drops: 0,
+        nanFix: 0, events: [],
+        /* 冲击波 / 连锁统计 */
+        shockOn: SHOCK_ON_DEFAULT,
+        shockCount: 0, shockHitTotal: 0,
+        dropMerges: 0, dropMaxGen: 0, maxDropMerges: 0, capHit: 0, capHits: 0,
+        genMax: 0, genSum: 0
+      };
+      s.next = pickLevel(s);
+      return s;
+    }
+
+    /* 落一手：x 是世界坐标（会被夹到 [r, CW-r]，所以贴边落子也是合法的） */
+    function drop(s, x){
+      if (s.ended || s.cd > 0 || s.bodies.length >= MAX_BODIES) return -1;
+      /* 上一次落子引发的合并数结账（用于统计/验收），再清零 */
+      if (s.dropMerges > s.maxDropMerges) s.maxDropMerges = s.dropMerges;
+      if (s.capHit){ s.capHits++; s.capHit = 0; }
+      s.dropMerges = 0;
+      s.dropMaxGen = 0;
+      var lv = s.next, r = RADII[lv];
+      var px = clamp(x, r, CW - r);
+      var b = addBody(s, lv, px, SPAWN_Y, 0, SPAWN_VY);
+      s.next = pickLevel(s);
+      s.cd = DROP_CD;
+      s.drops++;
+      s.events.push({ t: 'drop', lv: lv, x: px, y: SPAWN_Y, id: b.id });
+      return b.id;
+    }
+
+    /* 构造局面用（测试 / 开场垫底）：直接放一个圆，不消耗 RNG */
+    function spawn(s, lv, x, y, vx, vy){
+      lv = clamp(lv | 0, 1, MAX_LEVEL);
+      if (lv > s.maxLevel) s.maxLevel = lv;
+      var r = RADII[lv];
+      return addBody(s, lv, clamp(x, r, CW - r), y, vx, vy).id;
+    }
+
+    function step(s, n){
+      n = (n | 0) || 1;
+      for (var i = 0; i < n; i++) tick(s);
+      return s;
+    }
+
+    /* 盘面快照：字段顺序固定，可以直接 JSON.stringify 逐字符对比 */
+    function snapshot(s){
+      var out = {
+        tick: s.tick, seed: s.seed, score: s.score, ended: s.ended ? 1 : 0,
+        endReason: s.endReason,
+        next: s.next, merges: s.merges, maxLevel: s.maxLevel, drops: s.drops,
+        cd: s.cd, rng: s.rng, nanFix: s.nanFix,
+        shockOn: s.shockOn ? 1 : 0, shockCount: s.shockCount,
+        shockHitTotal: s.shockHitTotal, dropMerges: s.dropMerges,
+        dropMaxGen: s.dropMaxGen, genMax: s.genMax, genSum: s.genSum,
+        capHits: s.capHits, maxDropMerges: s.maxDropMerges,
+        cw: CW, ch: CH, dangerY: DANGER_Y, count: s.bodies.length,
+        bodies: []
+      };
+      for (var i = 0; i < s.bodies.length; i++){
+        var b = s.bodies[i];
+        out.bodies.push({ id: b.id, lv: b.lv, x: b.x, y: b.y,
+                          vx: b.vx, vy: b.vy, r: b.r, rest: b.rest ? 1 : 0 });
+      }
+      return out;
+    }
+
+    /* 盘面指纹（FNV-1a over JSON）：报告里用它证明「逐字段相同」 */
+    function hash(s){
+      var str = JSON.stringify(snapshot(s)), h = 2166136261;
+      for (var i = 0; i < str.length; i++){
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return (h >>> 0).toString(16);
+    }
+
+    /* 事件队列：渲染层消费（飘分 / 抖动），逻辑层不管 */
+    function drain(s){
+      var out = s.events;
+      s.events = [];
+      return out;
+    }
+
+    return {
+      /* 常量 */
+      CW: CW, CH: CH, WALL: WALL, TOP_PAD: TOP_PAD, DANGER_Y: DANGER_Y,
+      SPAWN_Y: SPAWN_Y, SPILL_Y: SPILL_Y,
+      DT: DT, MAX_LEVEL: MAX_LEVEL, RADII: RADII, SCORE: SCORE,
+      NAMES: NAMES, FILES: FILES, NEXT_W: NEXT_W,
+      CONST: { GRAVITY: GRAVITY, MAX_V: MAX_V, AIR_DRAG: AIR_DRAG,
+               POS_PCT: POS_PCT, MAX_CORR: MAX_CORR, ITER: ITER,
+               VEL_KEEP: VEL_KEEP, VEL_LIM_MIN: VEL_LIM_MIN,
+               VEL_LIM_K: VEL_LIM_K, VEL_LIM_ADD: VEL_LIM_ADD,
+               MERGE_SLOP: MERGE_SLOP, REST_DISP: REST_DISP,
+               SLEEP_T: SLEEP_T, DROP_CD: DROP_CD,
+               SPAWN_Y: SPAWN_Y, SPAWN_VY: SPAWN_VY, MAX_BODIES: MAX_BODIES,
+               SHOCK_POWER_BASE: SHOCK_POWER_BASE, SHOCK_POWER_PER_LV: SHOCK_POWER_PER_LV,
+               SHOCK_RANGE_K: SHOCK_RANGE_K, SHOCK_RANGE_BASE: SHOCK_RANGE_BASE,
+               SHOCK_FALLOFF_POW: SHOCK_FALLOFF_POW, SHOCK_MASS_K: SHOCK_MASS_K,
+               SHOCK_UP_K: SHOCK_UP_K, SHOCK_SIGN: SHOCK_SIGN, SHOCK_DOWN_K: SHOCK_DOWN_K,
+               MERGE_CAP: MERGE_CAP, CHAIN_WINDOW: CHAIN_WINDOW },
+      /* 玩法 */
+      create: create, drop: drop, step: step, snapshot: snapshot,
+      spawn: spawn, hash: hash, drain: drain,
+      /* 冲击波：开关与读数（验收要用同一份代码跑开/关两组） */
+      setShock: function(s, on){ s.shockOn = !!on; return s.shockOn; },
+      /* 测试钩子：在任意点手动发一圈冲击波（因果实验用，不参与正常玩法） */
+      _shock: function(s, x, y, lv, gen){ return applyShock(s, x, y, lv, gen || 1, -1); },
+      shockStats: function(s){
+        return { on: s.shockOn, count: s.shockCount, hitTotal: s.shockHitTotal,
+                 avgHit: s.shockCount ? s.shockHitTotal / s.shockCount : 0,
+                 merges: s.merges, genMax: s.genMax,
+                 avgGen: s.merges ? s.genSum / s.merges : 0,
+                 maxDropMerges: s.maxDropMerges, capHits: s.capHits };
+      },
+      /* 给测试/工具用的纯函数 */
+      clamp: clamp, hashSeed: hashSeed, pickLevel: pickLevel
+    };
+  })();
+
+/* ==========================================================================
+   ② 表现层（CORE）
+   ========================================================================== */
+/* ============================================================================
+   tower16 表现层 —— CORE 熔核
+   ----------------------------------------------------------------------------
+   分工（这是本文件唯一需要记住的架构决定）：
+     · **宝石走 DOM**：外壳的 `.gem` 自发光是 CSS filter + var(--g)/var(--glow)，
+       `.gem.merge-hot` 也是 CSS 动画 —— 只有 DOM 元素能吃到。canvas 做不到
+       同样的多层 drop-shadow。每帧只改 transform（translate3d + rotate），
+       不新建 DOM、不触发 layout。
+     · **canvas(#cv) 画能量**：瞄准线、落点、冲击波环、火花。这些每帧都要重画、
+       数量不定，正是 canvas 的活。
+   坐标：物理世界 (x,y) → #stage 内 CSS px → 视口 px（#ring 是 position:fixed）。
+   ========================================================================== */
+(function(){
+  'use strict';
+
+  var L = Logic;
+
+  var stage = document.getElementById('stage');
+  var cv = document.getElementById('cv');
+  var ctx = cv.getContext('2d');
+  var gemsBox = document.getElementById('gems');
+  var dangerEl = document.getElementById('danger');
+  var scoreEl = document.getElementById('score');
+  var nextImg = document.querySelector('#next .in img');
+  var nextBox = document.getElementById('next');
+  var flash = document.getElementById('flash');
+  var ring = document.getElementById('ring');
+  var overEl = document.getElementById('over');
+  var ovScore = document.getElementById('ovScore');
+  var ovSub = document.getElementById('ovSub');
+  var app = document.querySelector('.app');
+
+  /* 每级宝石的光晕参数：直接沿用外壳 mock 里的 --g / --glow */
+  var GEM = [
+    null,
+    { g: 2,  glow: '205,226,248' },  // 1 石英
+    { g: 4,  glow: '168,96,255'  },  // 2 紫水晶
+    { g: 3,  glow: '96,214,255'  },  // 3 海蓝宝
+    { g: 4,  glow: '52,226,150'  },  // 4 祖母绿
+    { g: 5,  glow: '255,59,74'   },  // 5 红宝石
+    { g: 6,  glow: '255,184,48'  },  // 6 托帕石
+    { g: 7,  glow: '74,110,255'  },  // 7 蓝宝石
+    { g: 8,  glow: '200,238,255' },  // 8 钻石
+    { g: 9,  glow: '255,92,208'  },  // 9 龙晶
+    { g: 22, glow: '255,226,154' }   // 10 世界核心
+  ];
+
+  var view = { w: 0, h: 0, s: 1, ox: 0, oy: 0, ui: 1 };
+  var S = null, aimX = L.CW / 2, uiScale = 1;
+  var els = {};                 // bodyId → <img class="gem">
+  var rings = [];               // canvas 冲击波环
+  var sparks = [];              // canvas 火花
+  var temp = '';                // 当前色温档
+  var coreColor = '#A9BFD6';
+  var shownScore = -1, shownNext = -1, overShown = false;
+
+  function nf(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  function clamp(v, lo, hi){ return v < lo ? lo : (v > hi ? hi : v); }
+  function px(x){ return view.ox + x * view.s; }
+  function py(y){ return view.oy - y * view.s; }
+
+  /* ---------------- 尺寸 ---------------- */
+  function fitApp(){
+    var vw = window.innerWidth || 390, vh = window.innerHeight || 844;
+    /* 外壳是 390×844 的绝对定位稿；窄屏整体等比缩，物理按 #stage 实测矩形自适应 */
+    var k = Math.min(1, vw / 390, vh / 844);
+    uiScale = k;
+    app.style.transform = k < 0.999 ? 'scale(' + k.toFixed(4) + ')' : '';
+    app.style.height = Math.max(844, vh) + 'px';
+  }
+
+  function fit(){
+    var r = stage.getBoundingClientRect();
+    var w = r.width, h = r.height;
+    if (!w || !h) return;
+    var s = Math.min(w / L.CW, h / L.CH);
+    view.w = w; view.h = h; view.s = s;
+    view.ox = (w - L.CW * s) / 2;
+    view.oy = h;                       /* 内腔底边 = 舞台底边 */
+    view.ui = uiScale;
+
+    var dpr = Math.min(2.5, window.devicePixelRatio || 1);
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    /* 危险线：唯一来源是内核 DANGER_Y */
+    var dangerPx = view.oy - L.DANGER_Y * s;
+    dangerEl.style.top = (dangerPx / uiScale).toFixed(4) + 'px';
+    stage.dataset.dangerOffset = dangerPx.toFixed(4);
+    stage.dataset.dangerOffsetLayout = (dangerPx / uiScale).toFixed(4);
+    stage.dataset.arenaW = String(L.CW);
+    stage.dataset.arenaH = String(L.CH);
+    stage.dataset.scale = s.toFixed(4);
+    stage.dataset.uiScale = uiScale.toFixed(4);
+    stage.dataset.worldPx = (L.CW * s).toFixed(2) + 'x' + (L.CH * s).toFixed(2);
+
+    /* 已有的宝石元素按新尺寸重排 */
+    var ids = Object.keys(els);
+    for (var i = 0; i < ids.length; i++){
+      var e = els[ids[i]];
+      e.w = 0;                     /* 逼下一帧重设宽高 */
+    }
+  }
+
+  function relayout(){ fitApp(); fit(); }
+  window.addEventListener('resize', relayout);
+
+  /* ---------------- 色温 ---------------- */
+  function readCoreColor(){
+    var c = getComputedStyle(document.body).getPropertyValue('--core-temp').trim();
+    if (c) coreColor = c;
+  }
+  function syncTemp(){
+    var mx = 1;
+    for (var i = 0; i < S.bodies.length; i++) if (S.bodies[i].lv > mx) mx = S.bodies[i].lv;
+    var t = mx >= 10 ? 'white' : mx >= 7 ? 'red' : mx >= 4 ? 'amber' : 'cold';
+    if (t !== temp){
+      temp = t;
+      document.body.dataset.temp = t;
+      readCoreColor();
+    }
+    return t;
+  }
+
+  /* ---------------- 宝石 DOM 池 ---------------- */
+  function makeGem(){
+    var el = document.createElement('img');
+    el.className = 'gem';
+    el.alt = '';
+    el.draggable = false;
+    el.addEventListener('animationend', function(){
+      el.classList.remove('merge-hot');
+    });
+    gemsBox.appendChild(el);
+    return { el: el, lv: 0, w: 0 };
+  }
+
+  function syncGems(){
+    var bs = S.bodies, live = {};
+    var i, b;
+    for (i = 0; i < bs.length; i++){
+      b = bs[i];
+      var rec = els[b.id];
+      if (!rec){ rec = els[b.id] = makeGem(); rec.w = 0; }
+      live[b.id] = 1;
+      if (rec.lv !== b.lv){
+        rec.lv = b.lv;
+        var meta = GEM[b.lv];
+        rec.el.src = L.FILES[b.lv];
+        rec.el.className = 'gem' + (b.lv >= 10 ? ' hero' : '');
+        rec.el.style.setProperty('--g', String(meta.g));
+        rec.el.style.setProperty('--glow', meta.glow);
+        rec.w = 0;                       /* 等级变了要重设尺寸 */
+      }
+      var d = b.r * 2 * view.s;
+      if (rec.w !== d){
+        rec.w = d;
+        rec.el.style.width = d.toFixed(2) + 'px';
+        rec.el.style.height = d.toFixed(2) + 'px';
+      }
+      var cx = px(b.x) - d / 2, cy = py(b.y) - d / 2;
+      rec.el.style.transform = 'translate3d(' + cx.toFixed(2) + 'px,' + cy.toFixed(2) + 'px,0) rotate(' +
+                               (b.ang).toFixed(3) + 'rad)';
+    }
+    /* 回收已经消失的宝石 */
+    for (var id in els){
+      if (!live[id]){
+        if (els[id].el.parentNode) els[id].el.parentNode.removeChild(els[id].el);
+        delete els[id];
+      }
+    }
+  }
+
+  /* ---------------- 特效 ---------------- */
+  function burst(el){
+    el.classList.remove('burst');
+    void el.offsetWidth;                 /* 强制重排，让动画能重播 */
+    el.dataset.state = 'burst';
+    el.classList.add('burst');
+  }
+  flash.addEventListener('animationend', function(){
+    flash.classList.remove('burst');
+    flash.dataset.state = 'idle';
+  });
+  ring.addEventListener('animationend', function(){
+    ring.classList.remove('burst');
+    ring.dataset.state = 'idle';
+  });
+
+  function mergeFx(evs){
+    var top = null, i, e;
+    for (i = 0; i < evs.length; i++){
+      e = evs[i];
+      if (e.t !== 'merge') continue;
+      if (!top || e.lv > top.lv) top = e;
+    }
+    if (!top) return;
+    /* 1) 全屏过曝 */
+    burst(flash);
+    /* 2) 能量环：写到**视口坐标**（#ring 是 fixed，margin -130 自居中） */
+    var r = stage.getBoundingClientRect();
+    ring.style.left = (r.left + px(top.x)).toFixed(1) + 'px';
+    ring.style.top = (r.top + py(top.y)).toFixed(1) + 'px';
+    burst(ring);
+    ring.dataset.lv = String(top.lv);
+    /* 3) 邻近宝石短暂增亮 */
+    var rr = (L.RADII[top.lv] * L.CONST.SHOCK_RANGE_K + L.CONST.SHOCK_RANGE_BASE) * 0.75;
+    var near = 0;
+    for (var id in els){
+      var b = null;
+      for (i = 0; i < S.bodies.length; i++) if (S.bodies[i].id === +id){ b = S.bodies[i]; break; }
+      if (!b) continue;
+      var d = Math.hypot(b.x - top.x, b.y - top.y);
+      if (d <= rr){
+        els[id].el.classList.remove('merge-hot');
+        void els[id].el.offsetWidth;
+        els[id].el.classList.add('merge-hot');
+        near++;
+      }
+    }
+    ring.dataset.near = String(near);
+    /* canvas 侧再画一圈「真实物理影响范围」 */
+    rings.push({ x: top.x, y: top.y, r0: L.RADII[top.lv] * 0.7, r1: rr / 0.75,
+                 age: 0, life: 0.34, lv: top.lv });
+    for (i = 0; i < 8; i++){
+      var a = Math.random() * Math.PI * 2, sp = (0.6 + Math.random()) * L.RADII[top.lv] * 5;
+      sparks.push({ x: top.x, y: top.y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+                    age: 0, life: 0.32 + Math.random() * 0.2 });
+    }
+  }
+
+  /* ---------------- 一局 ---------------- */
+  function newGame(seed){
+    S = L.create(seed === undefined ? (Date.now() % 100000) : seed);
+    L.spawn(S, 1,  95, 16);
+    L.spawn(S, 2, 136, 22);
+    L.spawn(S, 3, 190, 29);
+    L.spawn(S, 2, 244, 22);
+    L.spawn(S, 1, 285, 16);
+    L.step(S, 1);
+    aimX = L.CW / 2;
+    rings = []; sparks = [];
+    overShown = false;
+    overEl.classList.remove('on');
+    shownScore = -1; shownNext = -1;
+    /* 清掉旧宝石元素 */
+    for (var id in els){ if (els[id].el.parentNode) els[id].el.parentNode.removeChild(els[id].el); }
+    els = {};
+    syncTemp();
+    syncHud(true);
+  }
+
+  function syncHud(force){
+    if (S.score !== shownScore){
+      shownScore = S.score;
+      scoreEl.textContent = nf(S.score);
+    }
+    if (S.next !== shownNext){
+      shownNext = S.next;
+      nextImg.src = L.FILES[S.next];
+      nextImg.alt = L.NAMES[S.next];
+      nextBox.dataset.lv = String(S.next);
+    }
+  }
+
+  /* ---------------- 输入 ---------------- */
+  function aimAt(clientX){
+    var r = stage.getBoundingClientRect();
+    var rad = L.RADII[S.next];
+    aimX = clamp((clientX - r.left - view.ox) / view.s, rad, L.CW - rad);
+  }
+  function doDrop(){
+    if (!S || S.ended) return;
+    var rad = L.RADII[S.next];
+    L.drop(S, clamp(aimX, rad, L.CW - rad));
+  }
+  var dragging = false;
+  stage.addEventListener('pointerdown', function(e){
+    if (!S || S.ended) return;
+    dragging = true;
+    if (stage.setPointerCapture) { try { stage.setPointerCapture(e.pointerId); } catch (err) {} }
+    aimAt(e.clientX);
+    e.preventDefault();
+  }, { passive: false });
+  stage.addEventListener('pointermove', function(e){
+    if (!S || S.ended) return;
+    if (dragging || (e.pointerType === 'mouse' && e.buttons === 0)) aimAt(e.clientX);
+  }, { passive: true });
+  stage.addEventListener('pointerup', function(e){
+    if (!dragging) return;
+    dragging = false;
+    aimAt(e.clientX);
+    doDrop();
+    e.preventDefault();
+  }, { passive: false });
+  stage.addEventListener('pointercancel', function(){ dragging = false; });
+  window.addEventListener('keydown', function(e){
+    if (!S) return;
+    var rad = L.RADII[S.next];
+    if (e.key === 'ArrowLeft'){ aimX = clamp(aimX - 12, rad, L.CW - rad); e.preventDefault(); }
+    else if (e.key === 'ArrowRight'){ aimX = clamp(aimX + 12, rad, L.CW - rad); e.preventDefault(); }
+    else if (e.key === ' ' || e.key === 'Enter'){ doDrop(); e.preventDefault(); }
+  });
+  overEl.addEventListener('pointerdown', function(){ newGame(); });
+
+  /* ---------------- canvas：瞄准 / 落点 / 冲击波 / 火花 ---------------- */
+  function draw(dt){
+    var w = view.w, h = view.h, s = view.s;
+    ctx.clearRect(0, 0, w, h);
+    if (!S) return;
+    var bs = S.bodies, i, q;
+
+    /* 冲击波环（物理真实影响范围） */
+    for (i = rings.length - 1; i >= 0; i--){
+      q = rings[i];
+      q.age += dt;
+      if (q.age >= q.life){ rings.splice(i, 1); continue; }
+      var k = q.age / q.life;
+      var rad = (q.r0 + (q.r1 - q.r0) * (1 - Math.pow(1 - k, 2))) * s;
+      ctx.save();
+      ctx.globalAlpha = (1 - k) * (1 - k) * 0.5;
+      ctx.strokeStyle = coreColor;
+      ctx.lineWidth = Math.max(1, (2.6 - 1.8 * k) * s);
+      ctx.beginPath();
+      ctx.arc(px(q.x), py(q.y), rad, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+    /* 火花 */
+    for (i = sparks.length - 1; i >= 0; i--){
+      q = sparks[i];
+      q.age += dt;
+      if (q.age >= q.life){ sparks.splice(i, 1); continue; }
+      q.vy -= 1800 * dt;
+      q.x += q.vx * dt; q.y += q.vy * dt;
+      var a2 = 1 - q.age / q.life;
+      ctx.save();
+      ctx.globalAlpha = a2 * 0.85;
+      ctx.fillStyle = coreColor;
+      ctx.beginPath();
+      ctx.arc(px(q.x), py(q.y), Math.max(1, 2.4 * s * a2), 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+    }
+
+    /* 瞄准线 + 落点 */
+    if (!S.ended){
+      var ar = L.RADII[S.next];
+      /* 落点只看**已经落定的**宝石：刚丢下去那颗还在空中，
+         不排掉的话落点环会跟着它一起往下掉（上一版就是这个 bug）。 */
+      var surf = 0;
+      for (i = 0; i < bs.length; i++){
+        var nb = bs[i];
+        if (S.tick - nb.born < 42) continue;          /* 刚丢下去还在路上 */
+        if (!nb.rest && nb.spd > 150) continue;        /* 被冲击波抛起来的 */
+        if (Math.abs(nb.x - aimX) < nb.r + ar * 0.86){
+          var t2 = nb.y + nb.r;
+          if (t2 > surf) surf = t2;
+        }
+      }
+      var ax = px(aimX);
+      ctx.save();
+      ctx.globalAlpha = 0.30;
+      ctx.strokeStyle = coreColor;
+      ctx.lineWidth = Math.max(1, 1.2 * s);
+      ctx.setLineDash([5 * s, 7 * s]);
+      ctx.beginPath();
+      ctx.moveTo(ax, py(L.SPAWN_Y));
+      ctx.lineTo(ax, py(surf));
+      ctx.stroke();
+      ctx.restore();
+      /* 落点：一个细环 */
+      ctx.save();
+      ctx.globalAlpha = 0.55;
+      ctx.strokeStyle = coreColor;
+      ctx.lineWidth = Math.max(1.2, 1.6 * s);
+      ctx.beginPath();
+      ctx.ellipse(ax, py(surf) - 2 * s, ar * 0.8 * s, ar * 0.22 * s, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  }
+
+  /* ---------------- 主循环 ---------------- */
+  var last = 0, acc = 0;
+  function frame(now){
+    if (!last) last = now;
+    var dt = (now - last) / 1000;
+    last = now;
+    if (dt > 0.1) dt = 0.1;
+    if (S){
+      acc += dt;
+      var guard = 0;
+      while (acc >= L.DT && guard++ < 8){ L.step(S, 1); acc -= L.DT; }
+      if (acc > L.DT * 8) acc = 0;
+
+      var evs = L.drain(S);
+      if (evs.length) mergeFx(evs);
+
+      syncGems();
+      syncTemp();
+      syncHud(false);
+
+      if (S.ended && !overShown){
+        overShown = true;
+        ovScore.textContent = nf(S.score);
+        ovSub.textContent = '最高结晶 · ' + L.NAMES[S.maxLevel];
+        overEl.classList.add('on');
+      }
+    }
+    draw(dt);
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------------- 启动 ---------------- */
+  fitApp();
+  fit();
+  readCoreColor();
+  newGame();
+  requestAnimationFrame(frame);
+
+  window.__gate = {
+    tap: function(col){
+      var c = clamp((col === undefined || col === null) ? 2 : (col | 0), 0, 5);
+      var x = L.CW * (c + 0.5) / 6;
+      if (S && !S.ended){ aimX = x; return L.drop(S, x); }
+      return -1;
+    },
+    aim: function(x){ aimX = clamp(x, 0, L.CW); return aimX; }
+  };
+
+  window.__tower16 = {
+    Logic: L,
+    state: function(){ return S; },
+    snapshot: function(){ return L.snapshot(S); },
+    hash: function(){ return L.hash(S); },
+    drop: function(x){ aimX = x; doDrop(); return S.bodies.length; },
+    newGame: function(seed){ newGame(seed); return S.seed; },
+    temp: function(){ return document.body.dataset.temp; },
+    geometry: function(){
+      var r = stage.getBoundingClientRect();
+      var dr = dangerEl.getBoundingClientRect();
+      return {
+        stage: { x: r.left, y: r.top, w: r.width, h: r.height },
+        scale: view.s, uiScale: uiScale,
+        world: { cw: L.CW, ch: L.CH, dangerY: L.DANGER_Y, spawnY: L.SPAWN_Y },
+        dangerOffsetPx: parseFloat(stage.dataset.dangerOffset),
+        dangerDomY: dr.top,
+        dangerPhysicsY: r.top + (r.height - L.DANGER_Y * view.s),
+        sameSource: Math.abs(dr.top - (r.top + (r.height - L.DANGER_Y * view.s))) < 0.05
+      };
+    },
+    fx: function(){
+      return {
+        flash: flash.dataset.state, ring: ring.dataset.state,
+        ringLeft: ring.style.left, ringTop: ring.style.top,
+        hot: document.querySelectorAll('.gem.merge-hot').length,
+        gems: document.querySelectorAll('#gems .gem').length
+      };
+    },
+    /* 构造一个指定最高等级的盘面（验收色温用） */
+    forge: function(lv){
+      newGame(16);
+      for (var id in els){ if (els[id].el.parentNode) els[id].el.parentNode.removeChild(els[id].el); }
+      els = {};
+      S.bodies.length = 0;
+      L.spawn(S, lv, L.CW / 2, L.RADII[lv] + 6);
+      L.step(S, 2);
+      syncGems(); syncTemp(); syncHud(true);
+      return document.body.dataset.temp;
+    },
+    fill: function(n, seed){
+      newGame(seed === undefined ? 13 : seed);
+      var i = 0;
+      while (i < n){
+        if (L.drop(S, 30 + ((i * 137) % (L.CW - 60))) > 0) i++;
+        L.step(S, 40);
+        if (S.ended) break;
+      }
+      L.step(S, 120);
+      L.drain(S);
+      rings = []; sparks = [];
+      syncGems(); syncTemp(); syncHud(true);
+      return L.snapshot(S);
+    }
+  };
+
+  window.__tower16Ready = true;
+})();
+</script>
+</body>
+</html>
