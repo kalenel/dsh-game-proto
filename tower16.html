@@ -457,6 +457,34 @@
 
   /* 合并瞬间周边宝石：光晕放大 1.6×（前 60ms） */
   .gem.merge-hot{animation:gemFlash .18s ease-out 1 both;}
+
+  /* ---------- 金属碰撞火花 ---------- */
+  /* 每个火花是一个小方块，沿随机方向飞出后熄灭。
+     用 CSS 变量 --sx/--sy/--sr 由 JS 注入方向，避免为每个火花写独立 keyframes。 */
+  .spark{
+    position:fixed;pointer-events:none;z-index:102;
+    width:3px;height:3px;border-radius:1px;
+    background:#FFE9B0;
+    box-shadow:0 0 6px #FFC46A,0 0 12px rgba(255,150,60,.8);
+    animation:sparkFly .52s cubic-bezier(.15,.7,.4,1) forwards;
+  }
+  @keyframes sparkFly{
+    0%   {transform:translate(0,0) scale(1.6); opacity:1}
+    35%  {opacity:1}
+    100% {transform:translate(var(--sx),var(--sy)) scale(.2); opacity:0}
+  }
+  /* 撞击点的白热闪光 */
+  .impact{
+    position:fixed;pointer-events:none;z-index:101;
+    width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;
+    background:radial-gradient(circle,#FFFFFF 0%,#FFE9B0 34%,rgba(255,180,90,.45) 62%,transparent 78%);
+    animation:impactFlash .22s ease-out forwards;
+  }
+  @keyframes impactFlash{
+    0%  {transform:scale(.3);opacity:1}
+    60% {transform:scale(1.5);opacity:.85}
+    100%{transform:scale(2.1);opacity:0}
+  }
   @keyframes gemFlash{
     0%{filter:drop-shadow(0 0 calc(4px + var(--g) * 0.65px) rgba(var(--glow),.36)) drop-shadow(0 0 calc(9px + var(--g) * 1.3px) rgba(var(--glow),.11)) drop-shadow(0 8px 10px rgba(0,0,0,.55)) brightness(1.04) saturate(1.04);}
     8%,33%{filter:drop-shadow(0 0 calc(6.4px + var(--g) * 1.04px) rgba(var(--glow),.52)) drop-shadow(0 0 calc(14.4px + var(--g) * 2.08px) rgba(var(--glow),.18)) drop-shadow(0 8px 10px rgba(0,0,0,.55)) brightness(1.12) saturate(1.06);}
@@ -1339,6 +1367,8 @@ var Logic = (function(){
     ring.style.top = (r.top + py(top.y)).toFixed(1) + 'px';
     burst(ring);
     ring.dataset.lv = String(top.lv);
+    /* 金属碰撞火花：从合并点向四周飞散，等级越高越多 */
+    sparkBurst(r.left + px(top.x), r.top + py(top.y), top.lv);
     /* 3) 邻近宝石短暂增亮 */
     var rr = (L.RADII[top.lv] * L.CONST.SHOCK_RANGE_K + L.CONST.SHOCK_RANGE_BASE) * 0.75;
     var near = 0;
@@ -1404,6 +1434,44 @@ var Logic = (function(){
     }
   }
 
+  /* 金属碰撞火花：在 (vx,vy) 视口坐标处炸开一圈火花。
+     等级越高，火花越多、飞得越远 —— 和音效的"金属越贵越亮"对应。 */
+  var sparkPool = [];
+  function sparkBurst(vx, vy, lv){
+    if (!document.body) return;
+    var n = Math.min(26, 5 + lv * 2);
+    var reach = 26 + lv * 7;
+
+    /* 撞击点白热闪光 */
+    var im = document.createElement('div');
+    im.className = 'impact';
+    im.style.left = vx + 'px';
+    im.style.top  = vy + 'px';
+    document.body.appendChild(im);
+    setTimeout(function(){ if (im.parentNode) im.parentNode.removeChild(im); }, 260);
+
+    for (var i = 0; i < n; i++){
+      var sp = document.createElement('div');
+      sp.className = 'spark';
+      var ang = Math.random() * Math.PI * 2;
+      var dist = reach * (0.45 + Math.random() * 0.75);
+      sp.style.left = vx + 'px';
+      sp.style.top  = vy + 'px';
+      sp.style.setProperty('--sx', (Math.cos(ang) * dist).toFixed(1) + 'px');
+      sp.style.setProperty('--sy', (Math.sin(ang) * dist - 12).toFixed(1) + 'px');
+      /* 大小与颜色随等级变化：低级偏橙、高级偏白金 */
+      var sz = 2 + Math.random() * 2 + lv * 0.12;
+      sp.style.width = sp.style.height = sz.toFixed(1) + 'px';
+      if (lv >= 7) sp.style.background = '#FFFDF0';
+      else if (lv >= 4) sp.style.background = '#FFE9B0';
+      else sp.style.background = '#FFC46A';
+      document.body.appendChild(sp);
+      (function(el){
+        setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 560);
+      })(sp);
+    }
+  }
+
   /* 连锁提示：合并发生后短暂弹出「连锁 ×N」，N 来自内核的链长度 */
   var comboTimer = null;
   function showCombo(n){
@@ -1423,11 +1491,11 @@ var Logic = (function(){
   function doDrop(){
     if (!S || S.ended) return;
     var rad = L.RADII[S.next];
-    if (window.__audio) window.__audio.drop();
+    if (window.__audio) window.__audio.drop(S.next);
     L.drop(S, clamp(aimX, rad, L.CW - rad));
     /* 落子触底：宝石从出生点落到堆面约需 0.25-0.5 秒，用延时播"碰到"的音。
        这是 v1 缺的 —— 只有"出手"没有"落定"，手感是断的。 */
-    if (window.__audio) setTimeout(function(){ window.__audio.land(); }, 260);
+    if (window.__audio){ var lvDrop = S.next; setTimeout(function(){ window.__audio.land(lvDrop); }, 260); }
     // 首次落子后隐藏操作引导
     if (!tipHidden && tipEl){ tipHidden = true; tipEl.classList.add('hide'); }
   }
@@ -1647,51 +1715,66 @@ var Logic = (function(){
 </script>
 <script>
 /* ============================================================================
- * CORE 音景 v2 —— 空灵乐器音（FM 合成 + 物理建模）
+ * CORE 金属音效引擎 —— 模态合成（Modal Synthesis）
  * ----------------------------------------------------------------------------
- * v1 为什么失败（如实记录）：
- *   ① 纯 sine 波没有泛音结构 → 听感是"电子哔"，不是"乐器"
- *   ② 音量 0.055/0.10 在手机上几乎听不见（手机扬声器小、环境噪音大）
- *   ③ exponentialRamp 到 0.0001 收得太快 → 没有"余韵"，不空灵
+ * 为什么用模态合成：
+ *   真实金属被敲击后，会按自身几何形状的**一组固有频率**振动（振动模态）。
+ *   不同金属/形状的模态频率比不同 —— 这就是"钢""铜""金""银"听感不同的物理原因。
+ *   直接采样正弦叠加，比 FM 更接近真实撞击声。
  *
- * v2 依据（查过资料后重做）：
- *   · **FM 合成**是钢片琴/钟琴/风铃的标准做法（Bell = carrier + modulator，
- *     modulator 频率比取非整数产生金属泛音）。
- *     参考：Making Bells in the Web Audio API（加法合成 + 正弦建模）
- *   · **Karplus-Strong** 是拨弦/竖琴的物理建模法：短噪声激励 + 延迟线反馈 +
- *     低通滤波。用它做"竖琴/古筝"类音色。
- *   · **空灵解压**的关键不是音高，是：**长衰减 + 宽混响 + 泛音不刺耳**。
- *     所以：钟琴 FM（非整数比）+ 4 秒混响 + 低通削掉高频毛刺。
+ * 十级宝石 → 十种金属（从低到高，音越来越高、越来越"贵"）：
+ *   1 石英   铸铁  —— 低沉、闷、余音短
+ *   2 紫水晶 青铜  —— 温暖、略带鼻音
+ *   3 海蓝宝 黄铜  —— 明亮、有"叮"感
+ *   4 祖母绿 铜    —— 圆润、中频饱满
+ *   5 红宝石 白银  —— 清亮、泛音丰富
+ *   6 托帕石 黄金  —— 温暖辉煌、余音长
+ *   7 蓝宝石 钢    —— 硬、锐、高频突出
+ *   8 钻石   铂金  —— 极清亮、几乎无阻尼
+ *   9 龙晶   钛    —— 冷冽、带金属噪
+ *  10 世界核心 秘银 —— 空灵、超长余音、泛音密集
+ *
+ * 每种金属的模态比（f/f0）来自圆柱/板振动的理论近似：
+ *   板振动：1, 2.76, 5.40, 8.93, 13.34...
+ *   棒振动：1, 2.76, 5.40, 8.93...（自由-自由梁）
+ *   实际金属有阻尼，高阶模态衰减更快。
  * ========================================================================== */
 (function(){
   'use strict';
 
-  var AC = null, master = null, reverb = null, reverbSend = null, padGain = null;
-  var lowpass = null;
+  var AC = null, master = null, bus = null, reverb = null, reverbSend = null;
+  var lowpass = null, limiter = null;
   var started = false, muted = false;
 
-  /* 五声音阶（C 大调五声：C D E G A），跨 3 个八度。
-     五声任意两音叠置都协和 —— 这是"解压"的乐理基础。 */
-  var PENTA = [0, 2, 4, 7, 9, 12, 14, 16, 19, 21, 24, 26, 28, 31, 33];
-  var BASE_HZ = 261.63;   /* C4 —— 比 v1 的 C3 高一个八度，手机扬声器更容易出得来 */
-
-  function hz(semi){ return BASE_HZ * Math.pow(2, semi / 12); }
-
-  /* 程序生成混响 IR：4 秒，指数衰减，带一点早期反射密度 */
-  function makeIR(ctx, seconds, decay){
-    var rate = ctx.sampleRate, len = Math.floor(rate * seconds);
-    var buf = ctx.createBuffer(2, len, rate);
-    for (var ch = 0; ch < 2; ch++){
-      var d = buf.getChannelData(ch);
-      for (var i = 0; i < len; i++){
-        var t = i / len;
-        /* 前 8ms 加几个离散反射，之后是指数衰减噪声 —— 更接近真实石室 */
-        var early = (i < rate * 0.008) ? (Math.random() * 2 - 1) * 0.6 : 0;
-        d[i] = early + (Math.random() * 2 - 1) * Math.pow(1 - t, decay) * 0.55;
-      }
-    }
-    return buf;
-  }
+  /* ---- 十种金属的音色参数 ----------------------------------------
+     modes: 模态频率比（相对基频）
+     decay: 各模态的衰减时长（秒），高阶衰减更快
+     amp:   各模态的振幅
+     noise: 撞击瞬间的噪声量（0-1），模拟"金属摩擦/碎裂"
+     base:  基频（Hz），等级越高越高
+  ---------------------------------------------------------------- */
+  var METALS = {
+    /* 铸铁：模态少、衰减快、噪多 —— 闷 */
+    1:  { name:'铸铁',  base: 174.61, noise: 0.58, modes:[[1,1.00,0.46],[2.76,0.56,0.30],[5.40,0.30,0.18],[8.93,0.14,0.11]] },
+    /* 青铜：温暖、略带鼻音 */
+    2:  { name:'青铜',  base: 196.00, noise: 0.50, modes:[[1,1.00,0.60],[2.76,0.58,0.38],[5.40,0.32,0.24],[8.93,0.16,0.15]] },
+    /* 黄铜：明亮叮 */
+    3:  { name:'黄铜',  base: 220.00, noise: 0.44, modes:[[1,1.00,0.70],[2.76,0.60,0.44],[5.40,0.36,0.30],[8.93,0.20,0.19]] },
+    /* 铜：圆润中频 */
+    4:  { name:'紫铜',  base: 246.94, noise: 0.40, modes:[[1,1.00,0.76],[2.76,0.62,0.50],[5.40,0.40,0.36],[8.93,0.24,0.23]] },
+    /* 白银：清亮、泛音丰富 */
+    5:  { name:'白银',  base: 261.63, noise: 0.36, modes:[[1,1.00,0.84],[2.76,0.66,0.56],[5.40,0.44,0.42],[8.93,0.28,0.29],[13.34,0.15,0.18]] },
+    /* 黄金：温暖辉煌、余音长 */
+    6:  { name:'黄金',  base: 293.66, noise: 0.32, modes:[[1,1.00,0.92],[2.76,0.70,0.64],[5.40,0.48,0.48],[8.93,0.32,0.35],[13.34,0.18,0.22]] },
+    /* 钢：硬、锐、高频突出 */
+    7:  { name:'精钢',  base: 329.63, noise: 0.30, modes:[[1,1.00,1.10],[2.76,0.72,0.78],[5.40,0.46,0.58],[8.93,0.30,0.42],[13.34,0.16,0.28]] },
+    /* 铂金：极清亮、几乎无阻尼 */
+    8:  { name:'铂金',  base: 349.23, noise: 0.16, modes:[[1,1.00,1.20],[2.76,0.76,0.86],[5.40,0.50,0.64],[8.93,0.34,0.48],[13.34,0.20,0.34],[18.64,0.10,0.20]] },
+    /* 钛：冷冽、带金属噪 */
+    9:  { name:'钛金',  base: 392.00, noise: 0.36, modes:[[1,1.00,1.28],[2.76,0.80,0.92],[5.40,0.54,0.70],[8.93,0.38,0.52],[13.34,0.24,0.38],[18.64,0.12,0.24]] },
+    /* 秘银：空灵、超长余音、泛音密集 */
+    10: { name:'秘银',  base: 440.00, noise: 0.14, modes:[[1,1.00,1.45],[2.76,0.86,1.05],[5.40,0.60,0.82],[8.93,0.44,0.62],[13.34,0.30,0.46],[18.64,0.18,0.32],[23.98,0.09,0.20]] }
+  };
 
   function init(){
     if (AC) return true;
@@ -1703,29 +1786,29 @@ var Logic = (function(){
       master = AC.createGain();
       master.gain.value = 0.0001;
 
-      /* 总线低通：削掉 8kHz 以上的毛刺，让整体"柔" */
+      /* 金属声要保留高频（"叮"的锐度），所以低通放到 12kHz */
       lowpass = AC.createBiquadFilter();
       lowpass.type = 'lowpass';
-      lowpass.frequency.value = 8200;
-      lowpass.Q.value = 0.6;
+      lowpass.frequency.value = 12000;
+      lowpass.Q.value = 0.5;
 
-      /* 软限幅：防止多音叠加时超过 1.0 削波破音（实测 10 级合成峰值 1.15） */
-      var limiter = AC.createDynamicsCompressor();
-      limiter.threshold.value = -6;
-      limiter.knee.value = 6;
-      limiter.ratio.value = 12;
-      limiter.attack.value = 0.003;
-      limiter.release.value = 0.25;
+      /* 软限幅：金属声泛音多、峰值高，必须防削波 */
+      limiter = AC.createDynamicsCompressor();
+      limiter.threshold.value = -8;
+      limiter.knee.value = 4;
+      limiter.ratio.value = 14;
+      limiter.attack.value = 0.002;
+      limiter.release.value = 0.18;
 
       lowpass.connect(limiter);
       limiter.connect(master);
       master.connect(AC.destination);
 
-      /* 混响：4 秒长尾巴，湿声占比高 —— 空灵感的来源 */
+      /* 混响：金属撞击需要"空间"，但比钟琴短一点，2.2 秒 */
       reverb = AC.createConvolver();
-      reverb.buffer = makeIR(AC, 4.0, 2.2);
+      reverb.buffer = makeIR(AC, 2.2, 2.8);
       reverbSend = AC.createGain();
-      reverbSend.gain.value = 0.62;
+      reverbSend.gain.value = 0.34;
       reverb.connect(reverbSend);
       reverbSend.connect(lowpass);
 
@@ -1733,172 +1816,131 @@ var Logic = (function(){
     } catch (e){ AC = null; return false; }
   }
 
-  /* ---------------------------------------------------------------
-   * FM 钟琴音：carrier + modulator
-   *   ratio  非整数（1.41 / 2.76 / 3.5 等）→ 金属泛音，不是谐波
-   *   index  调制深度 → 决定"亮度/硬度"
-   * 这是钢片琴、钟琴、风铃的核心音色。
-   * ------------------------------------------------------------- */
-  function fmBell(freq, dur, vol, ratio, index, decayCurve){
-    if (!AC || muted) return;
-    var t0 = AC.currentTime;
-
-    var carrier = AC.createOscillator();
-    carrier.type = 'sine';
-    carrier.frequency.value = freq;
-
-    var mod = AC.createOscillator();
-    mod.type = 'sine';
-    mod.frequency.value = freq * (ratio || 1.41);
-
-    var modGain = AC.createGain();
-    /* 调制指数随时间快速衰减 —— 起音亮、余韵柔，这是钟的关键 */
-    var idx = (index || 2.2) * freq;
-    modGain.gain.setValueAtTime(idx, t0);
-    modGain.gain.exponentialRampToValueAtTime(Math.max(0.001, idx * 0.02), t0 + dur * 0.55);
-
-    mod.connect(modGain);
-    modGain.connect(carrier.frequency);
-
-    var g = AC.createGain();
-    var peak = Math.max(0.0001, vol);
-    g.gain.setValueAtTime(0.0001, t0);
-    g.gain.exponentialRampToValueAtTime(peak, t0 + 0.008);
-    /* 两段衰减：先快后慢，尾巴拉长（decayCurve 越大尾巴越长） */
-    g.gain.exponentialRampToValueAtTime(peak * 0.35, t0 + dur * 0.25);
-    g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur * (decayCurve || 1));
-
-    carrier.connect(g);
-    g.connect(lowpass);
-    g.connect(reverb);
-
-    carrier.start(t0); mod.start(t0);
-    carrier.stop(t0 + dur * (decayCurve || 1) + 0.1);
-    mod.stop(t0 + dur * (decayCurve || 1) + 0.1);
-    carrier.onended = function(){
-      try { carrier.disconnect(); mod.disconnect(); modGain.disconnect(); g.disconnect(); } catch (e){}
-    };
+  function makeIR(ctx, seconds, decay){
+    var rate = ctx.sampleRate, len = Math.floor(rate * seconds);
+    var buf = ctx.createBuffer(2, len, rate);
+    for (var ch = 0; ch < 2; ch++){
+      var d = buf.getChannelData(ch);
+      for (var i = 0; i < len; i++){
+        var t = i / len;
+        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay) * 0.5;
+      }
+    }
+    return buf;
   }
 
-  /* ---------------------------------------------------------------
-   * Karplus-Strong 拨弦音（竖琴/古筝感）
-   *   噪声激励 → 延迟线 → 低通反馈。适合"落子"这种短促动作。
-   * ------------------------------------------------------------- */
-  /* 拨弦音：不用 Karplus-Strong 递推（实测衰减过快，可闻仅 0.01s），
-     改成"三个衰减正弦叠加 + 明确包络" —— 可控、可测、听感更像竖琴。 */
-  function ksPluck(freq, dur, vol){
-    if (!AC || muted) return;
+  /* 噪声脉冲：撞击瞬间的"啪"，是金属声不可或缺的成分 */
+  function noiseBurst(vol, dur, hpFreq){
+    if (!AC || muted || vol <= 0) return;
     var t0 = AC.currentTime;
-    /* 基频 + 两个泛音，各自的衰减速度不同（高次泛音先消失 = 真实弦的行为） */
-    var partials = [
-      { mul: 1,    amp: 1.00, dec: 1.00 },
-      { mul: 2.01, amp: 0.42, dec: 0.62 },
-      { mul: 3.03, amp: 0.18, dec: 0.40 }
-    ];
-    for (var i = 0; i < partials.length; i++){
-      var pt = partials[i];
+    var sr = AC.sampleRate;
+    var len = Math.floor(sr * dur);
+    var buf = AC.createBuffer(1, len, sr);
+    var d = buf.getChannelData(0);
+    for (var i = 0; i < len; i++){
+      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3.2);
+    }
+    var src = AC.createBufferSource();
+    src.buffer = buf;
+
+    /* 高通：把噪声推到高频，听起来像金属摩擦而不是"噗" */
+    var hp = AC.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = hpFreq || 2400;
+
+    var g = AC.createGain();
+    g.gain.value = vol;
+
+    src.connect(hp); hp.connect(g);
+    g.connect(lowpass);
+    g.connect(reverb);
+    src.start(t0);
+    src.onended = function(){ try { src.disconnect(); hp.disconnect(); g.disconnect(); } catch (e){} };
+  }
+
+  /* ---- 核心：金属撞击音 ----------------------------------------
+     level  1..10，决定用哪种金属
+     power  0..1，撞击力度（影响音量、噪声量、高频亮度）
+  ---------------------------------------------------------------- */
+  function metalHit(level, power, pitchMul){
+    if (!AC || muted) return;
+    var lv = Math.max(1, Math.min(10, level | 0));
+    var m = METALS[lv];
+    if (!m) return;
+
+    var p = Math.max(0.15, Math.min(1.4, power === undefined ? 0.7 : power));
+    var pm = pitchMul || 1;
+    var f0 = m.base * pm;
+    var t0 = AC.currentTime;
+
+    /* 每个模态一个正弦，各自衰减 */
+    for (var i = 0; i < m.modes.length; i++){
+      var ratio = m.modes[i][0];
+      var amp   = m.modes[i][1];
+      var dec   = m.modes[i][2];
+
+      /* 高阶模态频率更高，用 power 提升其亮度（重击更"亮"） */
+      var freq = f0 * ratio * (1 + (p - 0.7) * 0.04 * i);
+      if (freq > 16000) continue;
+
       var osc = AC.createOscillator();
       osc.type = 'sine';
-      osc.frequency.value = freq * pt.mul;
+      osc.frequency.value = freq;
 
       var g = AC.createGain();
-      var peak = Math.max(0.0001, vol * pt.amp);
-      var life = dur * pt.dec;
+      var peak = Math.max(0.0002, amp * 0.30 * (0.55 + p * 0.6));
+      var life = dec * (0.85 + p * 0.5);
+
       g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(peak, t0 + 0.006);
-      g.gain.exponentialRampToValueAtTime(peak * 0.30, t0 + life * 0.18);
+      g.gain.exponentialRampToValueAtTime(peak, t0 + 0.003);          /* 极快起音 = 撞击感 */
+      g.gain.exponentialRampToValueAtTime(peak * 0.42, t0 + life * 0.12);
       g.gain.exponentialRampToValueAtTime(0.0001, t0 + life);
 
       osc.connect(g);
       g.connect(lowpass);
       g.connect(reverb);
       osc.start(t0);
-      osc.stop(t0 + life + 0.05);
+      osc.stop(t0 + life + 0.03);
       osc.onended = (function(o, gg){ return function(){ try { o.disconnect(); gg.disconnect(); } catch(e){} }; })(osc, g);
     }
+
+    /* 撞击噪声：力度越大越明显 */
+    noiseBurst(m.noise * 0.22 * (0.4 + p * 0.9), 0.055 + p * 0.05, 2200 + lv * 180);
   }
 
-  /* 合成音：等级 → 音高 + 亮度 + 尾巴长度。
-     高级用更大的 FM 指数（更亮）和更长尾巴（更空灵）。 */
+  /* ---- 对外：各种事件 ------------------------------------------- */
+
+  /* 落子：用「上一颗宝石的等级」决定金属，力度固定中等 */
+  function playDrop(level){
+    metalHit(level || 1, 0.62, 0.92);   /* 音高略降，表现"下落" */
+  }
+
+  /* 触底：同一金属，力度小、音高略升（碰到地面） */
+  function playLand(level){
+    metalHit(level || 1, 0.34, 1.06);
+  }
+
+  /* 合并：等级越高，金属越贵、力度越大、音越高 */
   function playMerge(level){
-    if (!AC) return;
     var lv = Math.max(1, Math.min(10, level | 0));
-    var idx = Math.min(PENTA.length - 1, lv - 1);
-    var f = hz(PENTA[idx]);
-
-    var vol  = 0.22 + lv * 0.018;             /* v2.1: 原 0.34+0.028 叠加泛音后峰值达 1.15 会削波，降到 0.24~0.40 */
-    var dur  = 1.5 + lv * 0.22;
-    var ratio = 1.41 + (lv - 1) * 0.075;      /* 非整数比 → 金属泛音 */
-    var index = 1.6 + lv * 0.34;
-
-    fmBell(f, dur, vol, ratio, index, 1.0);
-
-    /* 高级合成叠一个高八度的弱钟，形成"双层钟声" */
-    if (lv >= 4){
-      fmBell(f * 2, dur * 0.7, vol * 0.42, ratio * 1.6, index * 0.8, 0.9);
-    }
-    /* 顶级：加一个纯五度的长尾，像钟楼回响 */
-    if (lv >= 7){
-      fmBell(f * 1.5, dur * 1.3, vol * 0.3, ratio * 1.25, index * 0.7, 1.25);
-    }
+    metalHit(lv, 0.85 + lv * 0.03, 1.0);
+    /* 高级合成叠一层高八度的同金属，制造"共鸣" */
+    if (lv >= 4) setTimeout(function(){ metalHit(lv, 0.5, 2.0); }, 28);
+    if (lv >= 8) setTimeout(function(){ metalHit(lv, 0.34, 3.0); }, 62);
   }
 
-  /* 落子音：Karplus-Strong 拨弦，低沉、短促、有实体感。
-     v1 用的是 sine 72Hz —— 手机根本放不出来，这就是"下落没声"的原因。 */
-  function playDrop(){
-    if (!AC) return;
-    ksPluck(196.00, 0.95, 0.42);    /* G3，拨弦（时长 0.95s、音量 0.42，实测可闻 0.6s+） */
-  }
-
-  /* 落子触底：更轻的一声，表现"碰到了" */
-  function playLand(){
-    if (!AC) return;
-    fmBell(392.00, 0.5, 0.16, 2.76, 1.1, 0.8);
-  }
-
-  /* 连锁：快速琶音，越连越高 */
+  /* 连锁：快速连击，音高递增 */
   function playChain(n){
     if (!AC || n < 2) return;
     var count = Math.min(n, 7);
     for (var i = 0; i < count; i++){
       (function(k){
         setTimeout(function(){
-          var idx = Math.min(PENTA.length - 1, 5 + k);
-          fmBell(hz(PENTA[idx]), 1.1, 0.22 + k * 0.02, 1.78, 2.0, 0.95);
-        }, k * 62);
+          var lv = Math.min(10, 4 + k);
+          metalHit(lv, 0.55 + k * 0.05, 1 + k * 0.06);
+        }, k * 52);
       })(i);
     }
-  }
-
-  /* 环境铺底：三个纯五度低频 + 极慢起伏。
-     不是音乐，是"空间在呼吸"。 */
-  function startPad(){
-    if (!AC || padGain) return;
-    padGain = AC.createGain();
-    padGain.gain.value = 0.0001;
-    padGain.connect(reverb);
-    padGain.connect(lowpass);
-
-    [65.41, 98.00, 130.81, 196.00].forEach(function(f, i){
-      var o = AC.createOscillator();
-      o.type = 'sine';
-      o.frequency.value = f;
-      o.detune.value = (i - 1.5) * 6;
-      var g = AC.createGain();
-      g.gain.value = 0.55 / (i + 1);
-      o.connect(g); g.connect(padGain);
-      o.start();
-    });
-
-    (function breathe(){
-      if (!AC || !padGain) return;
-      var t = AC.currentTime;
-      padGain.gain.cancelScheduledValues(t);
-      padGain.gain.setValueAtTime(padGain.gain.value, t);
-      padGain.gain.linearRampToValueAtTime(0.055, t + 9);
-      padGain.gain.linearRampToValueAtTime(0.022, t + 19);
-      setTimeout(breathe, 19000);
-    })();
   }
 
   function unlock(){
@@ -1908,8 +1950,7 @@ var Logic = (function(){
     if (AC.state === 'suspended') AC.resume();
     var t = AC.currentTime;
     master.gain.setValueAtTime(0.0001, t);
-    master.gain.exponentialRampToValueAtTime(1.0, t + 1.2);
-    startPad();
+    master.gain.exponentialRampToValueAtTime(1.0, t + 0.8);
   }
 
   window.addEventListener('pointerdown', unlock, { once: true });
@@ -1923,7 +1964,9 @@ var Logic = (function(){
     drop: playDrop,
     land: playLand,
     chain: playChain,
-    /* 音量自检：返回 master 当前值，供无头验证"真的有声" */
+    hit: metalHit,
+    metalName: function(lv){ return (METALS[lv] || METALS[1]).name; },
+    metals: function(){ return Object.keys(METALS).map(function(k){ return { lv:+k, name:METALS[k].name, base:METALS[k].base }; }); },
     level: function(){ return master ? master.gain.value : 0; },
     mute: function(v){ muted = !!v; if (master) master.gain.value = muted ? 0.0001 : 1.0; return muted; },
     isMuted: function(){ return muted; }
