@@ -1,0 +1,1253 @@
+<!DOCTYPE html>
+<!--
+  ============================================================================
+  《合成塔》tower14 —— D · 东方水墨仙侠丹炉（physics core from tower13）
+  ============================================================================
+  外壳：spike/proto/_mock-d.html（art-director 交付，只删了静态占位层、
+        把「鎮」符挪到危险线上方、给 #cv 加 pointer-events:none，其余原样）
+  内核：spike/proto/tower13.html 的 Logic 片段，**逐字节相同**（14,125 B / 402 行）
+        运行期用 sha256 对比可以自证，见 spike/_tower14-verify.mjs。
+
+  ## 世界尺寸 vs 舞台尺寸（本文件唯一需要想清楚的地方）
+  内核的世界是 380×520（常量写死在 IIFE 里，逐字节不许动），D 的 #stage 是
+  260×440。两者宽高比不同（0.731 vs 0.591），所以：
+      · **等比缩放 + 贴底**，不拉伸（拉伸会把圆画成椭圆）
+      · s = min(260/380, 440/617) = 0.6842  →  内腔 260×355.8，顶部留 84.2px
+      · 84px 是**出丹口**：托在罐口那颗丹宝石世界 y=SPAWN_Y=564、最大半径 49，
+        顶点到 617 世界单位，在舞台里落在 20.6px 处 —— 正好用满，不会被裁
+      · 等级 1 直径 21.9px，等级 10 直径 183.4px（内腔宽 260）
+  几何在运行时从 #stage 的真实矩形量出来（fit()），美术改内腔尺寸不用改代码。
+
+  ## 260×440 当成「物理几何」的复测（t4 关键项，实测见 spike/out/_tower14-geo.txt）
+  把内核常量替换成下面几组尺寸各跑 27 个种子（随机 / 1-ply 模拟机器人）：
+      尺寸      aspect  一局中位手数  模拟/随机   备注
+      260×440   0.591      40 手      1.48×   ⚠️ 10 级直径 268 > 260，装不下
+      300×460   0.652      52 手      1.26×
+      340×480   0.708      62 手      1.29×
+      380×520   0.731      85 手      1.27×   ← 现役（tower13 调优值）
+  结论：四种尺寸下「位置都有意义」（ratio 都 ≥ 1.15），所以 260×440 并没有
+  把玩法变成运气；但它有两个硬伤：
+    ① 10 级丹石直径 268 比内腔还宽 —— 顶级目标物理上不可达；真被合出来会卡在
+       两面墙之间（墙夹取的 else-if 只能满足一边）。
+    ② 一局手数从 85 腰斩到 40，长线积累空间少一半，分数天花板只有一半左右。
+  因此**不把物理压成 D 的内腔比例**，而是保持 380×520、按比例落进丹炉：
+      #stage 260×440（**现尺寸即可，不需要美术改**）
+        内腔（物理区）260×355.8 ＋ 出丹口 84.2
+  若以后想把宝石整体放大，把丹炉等比放大即可（例如 #stage 300×458、
+  炉底前沿与四足同步下移），渲染层自适应，不用改一行代码。
+
+  ## 危险线只有一个来源
+  物理阈值是内核的 DANGER_Y=430。DOM 的 #danger.style.top 和
+  data-danger-offset 都由它算出来：top = 舞台高 - 430×s。所以
+  「#stage.top + data-danger-offset」与物理阈值**按定义相等**。
+  实测：两个来源分别是 361.7895 / 361.7813 px，差 0.008px —— 那不是两套数，
+  是 Chrome 把布局取整到 1/64 px（361.78125）的结果，小于 1/64。
+  data-* 的四个口径（别混）：
+      data-arena-w/h       380×520  物理世界尺寸（内核常量，世界单位）
+      data-stage-w/h       260×440  舞台 CSS 像素（美术的内腔矩形）
+      data-world-px        260×355.8  世界等比缩放后实际画多大
+      data-danger-offset   145.7895  危险线距舞台顶边的视觉像素（验收公式用这个）
+
+  ## 表现层不画炉壁
+  canvas 只画宝石 / 瞄准 / 飘分 / 涟漪，炉腔底色、内壁暗角、炉火、炉口、
+  炉底前沿全部留给 CSS —— 否则会把 art-director 的水墨材质盖掉。
+
+  ## 玩法（与 tower13 完全一致，因为内核没动）
+  拖拽选位置 → 松手落子；同级丹石相撞合炼成高一级；静止丹石顶点越过
+  「丹火將溢」线即结束；一局到底比「丹成之數」。
+
+  ## 复核
+      node spike/_tower14-verify.mjs                无头：逐字节 + 稳定性 + 复现
+      node spike/_shot.mjs file:///D:/diergeyouxi/spike/proto/tower14.html \
+           D:/diergeyouxi/spike/out/_shots14      手机视口截图
+  页面内（控制台）：
+      __tower14.geometry()   打印舞台/内腔/危险线三个数，含 sameSource 断言
+      __tower14.snapshot()   当前盘面
+  ============================================================================
+-->
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>合成塔 · 丹房卷七</title>
+<style>
+
+  /* =====================================================================
+     方向 D · 东方水墨 / 仙侠丹炉 —— 可承载物理内核的生产外壳
+     接线契约（与 tower13 渲染层对齐）：
+       #app>#hud> .score-wrap>#score / .best>#best / #merges
+       #hud>.hold> .hold-gem>#holdImg / #holdName
+       #app>#ding>#stage(矩形物理区)>#cv(canvas, 渲染层) —— 静态占位层已删除
+       #app>#foot>#hintText / #restartBtn
+       #over> .ov-card>#overScore / #overSub / #overBest / #again
+     #stage 是物理边界：固定 260×440（data-arena-*），墙/底材质由 .body/.sill 提供。
+     静态占位层已删除；#cv 直接画在内腔上（透明画布，材质仍由 CSS 提供）。
+     内腔配色变量：--arena-fill / --arena-fill-2 / --arena-wall / --arena-floor，
+     供 canvas 重绘时取同色，保持水墨调性。
+     ===================================================================== */
+  :root{
+    --paper:#ECE3CF; --paper-2:#E4D8BE; --paper-3:#F4ECDA;
+    --ink:#241F18; --ink-soft:#4A4235; --ink-mute:#8A7A5F;
+    --cinnabar:#B23A2C; --cinnabar-2:#D4643F; --jade:#4A9B8E;
+    --bronze:#A47C3F; --bronze-lt:#E2C489; --bronze-dk:#33260F;
+    --arena-fill:#F2E7D0; --arena-fill-2:#E6D7B9;
+    --arena-wall:#3A3024; --arena-floor:#241C12;
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  html,body{margin:0;height:100%;overflow:hidden}
+  body{
+    font-family:"KaiTi","STKaiti","Kaiti SC","Songti SC","SimSun",serif;
+    color:var(--ink);user-select:none;-webkit-font-smoothing:antialiased;
+    background:radial-gradient(120% 72% at 50% 0%, #F1E9D7 0%, var(--paper) 44%, var(--paper-2) 100%);
+  }
+  /* 宣纸纤维（暖灰，不刺眼） */
+  .paper{position:fixed;inset:0;pointer-events:none;opacity:.5;
+    background:
+      repeating-linear-gradient(92deg, rgba(112,94,64,.055) 0 1px, transparent 1px 6px),
+      repeating-linear-gradient(1deg, rgba(112,94,64,.04) 0 1px, transparent 1px 8px),
+      radial-gradient(rgba(150,130,100,.14) .6px, transparent .8px) 0 0/10px 10px;}
+  .wash{position:fixed;inset:0;pointer-events:none;
+    background:
+      radial-gradient(44% 24% at 3% 2%, rgba(36,31,24,.14), transparent 70%),
+      radial-gradient(60% 22% at 50% 104%, rgba(36,31,24,.12), transparent 74%),
+      radial-gradient(20% 12% at 92% 58%, rgba(74,155,142,.08), transparent 72%);}
+  .app{position:relative;height:100%;display:flex;flex-direction:column;padding:14px 14px 12px;gap:10px;}
+
+  /* ---------- 顶栏 ---------- */
+  .top{height:28px;display:flex;align-items:center;justify-content:space-between;}
+  .brand{display:flex;align-items:center;gap:9px;font-size:10.5px;letter-spacing:.22em;color:#4C4438;}
+  .brand .bar{width:22px;height:2px;background:var(--ink);box-shadow:0 4px 0 rgba(36,31,24,.35);}
+  .brand em{font-style:normal;font-size:8px;letter-spacing:.18em;color:#9A8B72;}
+  .seal-top{width:32px;height:32px;display:grid;place-items:center;transform:rotate(-2.5deg);
+    font-size:16px;color:#FBEFE6;background:var(--cinnabar);border-radius:2px;
+    box-shadow:0 0 0 2px var(--cinnabar),inset 0 0 0 2px rgba(251,239,230,.5),0 3px 8px rgba(120,40,25,.25);}
+
+  /* ---------- HUD ---------- */
+  #hud{display:flex;align-items:flex-end;justify-content:space-between;gap:8px;padding:0 2px;}
+  .lab{font-size:9px;letter-spacing:.38em;color:var(--ink-mute);margin-bottom:2px;}
+  #score{font-family:Georgia,"Times New Roman",serif;font-size:64px;line-height:.9;font-weight:700;color:var(--ink);
+    letter-spacing:-.005em;font-variant-numeric:tabular-nums lining-nums;
+    text-shadow:0 1px 0 rgba(255,255,255,.55);}
+  .score-line{display:flex;align-items:baseline;gap:7px;}
+  .unit{font-size:13px;color:var(--ink-mute);letter-spacing:.08em;}
+  .best{font-size:10px;letter-spacing:.12em;color:var(--ink-mute);margin-top:7px;}
+  .best b{color:#3E3628;font-weight:400;font-variant-numeric:tabular-nums;}
+  .best .dot{margin:0 6px;opacity:.55;}
+  .sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;}
+
+  /* 下一粒：竹简 */
+  .hold{position:relative;width:62px;height:112px;flex:none;transform:rotate(1.6deg);
+    padding:7px 5px 6px;border:1px solid #B59B6B;
+    background:linear-gradient(90deg,#E9DAB4 0 31%,#DECB9F 31% 33%,#E5D5AE 33% 64%,#D9C79B 64% 66%,#E7D7B0 66% 100%);
+    box-shadow:0 4px 0 #C6AF80,0 9px 16px rgba(90,70,40,.16),inset 0 1px 0 rgba(255,255,255,.7);}
+  .hold::before{content:"";position:absolute;left:50%;top:-8px;width:14px;height:10px;transform:translateX(-50%);
+    border:2px solid var(--cinnabar);border-bottom:0;border-radius:8px 8px 0 0;}
+  .hold-gem{width:30px;height:30px;margin:0 auto 2px;}
+  .hold-gem img{width:100%;height:100%;object-fit:contain;display:block;
+    filter:drop-shadow(0 2px 2px rgba(80,55,20,.3));}
+  .hname{writing-mode:vertical-rl;text-orientation:upright;margin:0 auto;
+    font-size:8px;letter-spacing:.14em;color:#5A4B34;line-height:1.4;height:36px;}
+  #holdName{font-size:8px;letter-spacing:.14em;color:var(--cinnabar);text-align:center;margin-top:3px;}
+
+  /* ---------- 方鼎 / 丹炉 ---------- */
+  #ding{position:relative;width:344px;flex:1;min-height:0;align-self:center;}
+
+  /* 鼎身：上宽下收的器形剪影（不是方盒子），左右厚壁在此显材质 */
+  .body{position:absolute;left:6px;right:6px;top:14px;bottom:26px;z-index:1;
+    clip-path:polygon(1% 0,99% 0,98% 10%,96% 45%,93% 100%,7% 100%,4% 45%,2% 10%);
+    background:
+      repeating-linear-gradient(180deg, rgba(216,184,122,.16) 0 1px, transparent 1px 19px),
+      radial-gradient(34% 44% at 9% 30%, rgba(74,155,142,.22), transparent 70%),
+      radial-gradient(30% 26% at 88% 22%, rgba(212,100,63,.16), transparent 72%),
+      repeating-linear-gradient(90deg, rgba(0,0,0,.16) 0 1px, transparent 1px 10px),
+      linear-gradient(180deg,#4A3E2E 0%,#3A3024 26%,#2A231A 66%,#17130E 100%);
+    box-shadow:0 22px 38px rgba(46,32,16,.30),inset 0 2px 0 rgba(255,226,170,.22);}
+  .body::after{content:"";position:absolute;left:12%;right:12%;bottom:9px;height:11px;opacity:.7;
+    background:
+      repeating-linear-gradient(90deg,rgba(216,184,122,.95) 0 2px,transparent 2px 5px,rgba(216,184,122,.6) 5px 7px,transparent 7px 13px);
+    box-shadow:0 -1px 0 rgba(0,0,0,.45);}
+
+  /* 炉口：整条鼎沿，压在炉腔上 */
+  .rim{position:absolute;left:2px;right:2px;top:8px;height:36px;z-index:9;border-radius:6px;
+    background:linear-gradient(180deg,#F0D094 0%,#B08A46 30%,#6B5028 68%,#3A2A10 100%);
+    box-shadow:0 4px 0 rgba(0,0,0,.42),inset 0 1px 0 rgba(255,244,204,.75),0 -6px 14px rgba(0,0,0,.16);}
+  .rim::before{content:"";position:absolute;left:0;right:0;top:20px;height:2px;background:rgba(178,58,44,.75);}
+  .rim::after{content:"";position:absolute;left:10px;right:10px;top:7px;height:6px;border-radius:3px;opacity:.5;
+    background:repeating-linear-gradient(90deg,rgba(60,40,14,.6) 0 2px,transparent 2px 9px);}
+
+  /* 炉腔：物理区 #stage（唯一矩形基准） */
+  #stage{position:absolute;left:42px;top:42px;width:260px;height:440px;z-index:2;overflow:hidden;
+    touch-action:none;
+    background:linear-gradient(180deg,var(--arena-fill) 0%,var(--arena-fill-2) 58%,#DFCFAF 100%);
+    box-shadow:
+      inset 18px 0 26px rgba(58,42,24,.28), inset -18px 0 26px rgba(58,42,24,.28),
+      inset 0 26px 30px rgba(58,42,24,.22), inset 0 -30px 34px rgba(58,42,24,.30),
+      0 0 0 1px rgba(58,42,24,.55);}
+  /* 炉腔内壁的纸纹与炉火 */
+  #stage::before{content:"";position:absolute;inset:0;pointer-events:none;opacity:.6;
+    background:
+      linear-gradient(180deg, rgba(40,30,18,.38) 0%, rgba(40,30,18,.10) 26px, transparent 52px),
+      repeating-linear-gradient(91deg, rgba(120,98,64,.055) 0 1px, transparent 1px 7px),
+      radial-gradient(60% 26% at 50% 104%, rgba(178,58,44,.18), transparent 72%);}
+  #cv{position:absolute;inset:0;width:100%;height:100%;z-index:4;display:block;background:transparent;}
+
+
+  /* 炉底前沿：压住炉腔下缘，给出纵深 */
+  .sill{position:absolute;left:14px;right:14px;top:482px;height:34px;z-index:9;border-radius:3px 3px 5px 5px;
+    background:linear-gradient(180deg,#E2C489 0%,#A47C3F 28%,#5B4522 68%,#2E210D 100%);
+    box-shadow:0 5px 0 rgba(0,0,0,.35),inset 0 1px 0 rgba(255,244,204,.7),0 -10px 18px rgba(30,20,8,.28);}
+  .sill::after{content:"";position:absolute;left:12px;right:12px;top:12px;height:2px;background:rgba(178,58,44,.6);}
+
+  /* 四足 */
+  .leg{position:absolute;top:510px;width:26px;height:62px;z-index:1;
+    background:linear-gradient(180deg,#4A3D2C,#241E17 72%,#100D0A);
+    border-radius:3px 3px 9px 9px;box-shadow:inset 0 0 0 1px rgba(200,160,90,.18);}
+  .leg::after{content:"";position:absolute;left:0;right:0;top:0;height:9px;
+    background:linear-gradient(180deg,#B18D45,#5C4520);border-radius:3px 3px 0 0;}
+  .leg.a{left:34px}.leg.b{left:118px}.leg.c{right:118px}.leg.d{right:34px}
+
+  /* 双耳（鼎耳） */
+  .ear{position:absolute;top:2px;width:28px;height:58px;z-index:10;border-radius:6px;
+    background:linear-gradient(180deg,#C9A868,#7A5A2E 46%,#3A2A10 100%);
+    box-shadow:0 3px 0 rgba(0,0,0,.4),inset 0 1px 0 rgba(255,244,204,.55);}
+  .ear i{position:absolute;left:9px;top:16px;width:10px;height:26px;border-radius:5px;
+    background:#241C12;box-shadow:inset 0 0 5px #000;}
+  .ear.l{left:-4px}.ear.r{right:-4px}
+
+  /* 危险线：丹火将溢 */
+  #danger{position:absolute;left:0;right:0;top:34px;height:0;z-index:7;pointer-events:none;}
+  #danger .line{position:absolute;left:8px;right:8px;top:0;height:2.5px;
+    background:linear-gradient(90deg,rgba(178,58,44,0) 0%,var(--cinnabar) 10%,#C0392B 50%,var(--cinnabar) 90%,rgba(178,58,44,0) 100%);
+    box-shadow:0 0 8px rgba(192,57,43,.35);}
+  #danger .line::after{content:"";position:absolute;left:0;right:0;top:4px;height:1px;
+    background:repeating-linear-gradient(90deg,rgba(178,58,44,.35) 0 1px,transparent 1px 22px);}
+  #danger .plate{position:absolute;left:6px;top:-19px;font-size:8.5px;letter-spacing:.2em;color:#A93B2C;
+    padding:1px 6px;border:1px solid rgba(169,59,44,.45);background:rgba(242,231,208,.75);}
+  #danger .fu{position:absolute;right:8px;top:-64px;width:19px;height:56px;transform:rotate(2deg);
+    background:linear-gradient(180deg,#EAD79A,#DFC784);border:1px solid var(--cinnabar);
+    box-shadow:0 3px 6px rgba(90,60,20,.22);display:flex;flex-direction:column;align-items:center;
+    padding-top:5px;gap:3px;}
+  #danger .fu span{writing-mode:vertical-rl;text-orientation:upright;font-size:10px;color:#A93B2C;letter-spacing:.1em;line-height:1;}
+  #danger .fu i{width:5px;height:5px;background:var(--cinnabar);transform:rotate(45deg);opacity:.85;}
+
+  /* 底栏 */
+  #foot{height:44px;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 2px;}
+  #hintText{font-size:10.5px;letter-spacing:.14em;color:#7C6C51;line-height:1.45;}
+  #restartBtn{width:42px;height:42px;flex:none;display:flex;align-items:center;justify-content:center;
+    gap:0;flex-direction:column;padding:0;border:0;cursor:pointer;transform:rotate(2deg);
+    color:#FBEFE6;background:var(--cinnabar);border-radius:3px;font-family:inherit;
+    box-shadow:0 0 0 2px var(--cinnabar),inset 0 0 0 2px rgba(251,239,230,.42),0 4px 10px rgba(110,35,20,.28);}
+  #restartBtn b{font-size:10px;font-weight:400;line-height:1.05;letter-spacing:.05em;}
+
+  /* 结算层（默认隐藏） */
+  #over{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;
+    background:rgba(36,28,18,.46);-webkit-backdrop-filter:blur(3px);backdrop-filter:blur(3px);}
+  #over.hidden{display:none}
+  .ov-card{width:300px;padding:26px 22px 22px;text-align:center;
+    background:linear-gradient(180deg,#F4ECDA,#E9DEC5);border:1px solid #B59B6B;
+    box-shadow:0 24px 50px rgba(30,20,8,.35),inset 0 0 0 6px rgba(255,255,255,.25);
+    position:relative;}
+  .ov-card::before{content:"";position:absolute;left:10px;right:10px;top:10px;bottom:10px;
+    border:1px solid rgba(178,58,44,.35);pointer-events:none;}
+  .ov-kicker{font-size:11px;letter-spacing:.32em;color:var(--cinnabar);margin-bottom:8px;}
+  .ov-score{font-family:Georgia,serif;font-size:52px;font-weight:700;color:var(--ink);line-height:1;
+    font-variant-numeric:tabular-nums;}
+  .ov-sub{font-size:10px;letter-spacing:.14em;color:#7C6C51;margin-top:8px;}
+  .ov-best{font-size:9.5px;letter-spacing:.14em;color:#8C7C60;margin-top:14px;}
+  .ov-best b{color:#3E3628;font-weight:400;}
+  #again{margin-top:18px;padding:10px 22px;border:0;cursor:pointer;font-family:inherit;
+    font-size:11px;letter-spacing:.22em;color:#FBEFE6;background:var(--cinnabar);border-radius:2px;
+    box-shadow:0 0 0 2px var(--cinnabar),inset 0 0 0 2px rgba(251,239,230,.4),0 4px 10px rgba(110,35,20,.3);}
+
+  /* ===== tower14 接线补丁（只有这三条，其余材质/配色原样未动） ===== */
+  #cv{pointer-events:none}                 /* 指针一律由 #stage 收，画布只负责画 */
+  #stage{will-change:transform}            /* 物理每帧重绘，提示合成层 */
+  #danger{transition:none}                 /* top 由 JS 按内核 DANGER_Y 算出来 */
+</style>
+</head>
+<body>
+<div class="paper"></div>
+<div class="wash"></div>
+
+<div id="app" class="app">
+
+  <div class="top">
+    <div class="brand"><span class="bar"></span>丹房 · 卷七<em>东方水墨 · D</em></div>
+    <div class="seal-top">丹</div>
+  </div>
+
+  <header id="hud">
+    <div class="score-wrap">
+      <div class="lab">丹成之數</div>
+      <div class="score-line"><div id="score">86,420</div><span class="unit">粒</span></div>
+      <div class="best">歷劫最高 <b id="best">98,600</b><b id="merges" class="sr">126</b></div>
+    </div>
+
+    <div class="hold">
+      <div class="hold-gem"><img id="holdImg" src="gems/gem-06-topaz.png" alt="黃玉"></div>
+      <div class="hname">下一粒</div>
+      <div id="holdName">黃玉</div>
+    </div>
+  </header>
+
+  <div id="ding">
+    <!-- 炉身（左右厚壁 + 四足） -->
+    <div class="body"></div>
+    <div class="leg a"></div><div class="leg b"></div><div class="leg c"></div><div class="leg d"></div>
+
+    <!-- 物理区：唯一矩形基准 260×440（与 #cv 同尺寸） -->
+    <div id="stage" data-arena-w="260" data-arena-h="440" data-danger-offset="34">
+      <!-- 物理画布：默认透明空白；接线后渲染层绘制于此 -->
+      <canvas id="cv" width="260" height="440" aria-hidden="true"></canvas>
+
+      <!-- 危险线（物理越线即败的视觉锚点） -->
+      <div id="danger">
+        <div class="line"></div>
+        <div class="plate">丹火將溢</div>
+        <div class="fu"><span>鎮</span><i></i></div>
+      </div>
+    </div>
+
+    <!-- 炉口 / 炉底前沿 / 双耳 -->
+    <div class="rim"></div>
+    <div class="sill"></div>
+    <div class="ear l"><i></i></div><div class="ear r"><i></i></div>
+  </div>
+
+  <footer id="foot">
+    <span id="hintText">拖動丹石 · 松手落子</span>
+    <button id="restartBtn" type="button" title="重开一炉" aria-label="重开一炉"><b>重<br>開</b></button>
+  </footer>
+
+</div>
+
+<!-- 结算层 -->
+<div id="over" class="hidden">
+  <div class="ov-card">
+    <div class="ov-kicker">丹爐已滿</div>
+    <div class="ov-score" id="overScore">0</div>
+    <div class="ov-sub" id="overSub">最高丹品 · 黃玉</div>
+    <div class="ov-best">歷劫最高 <b id="overBest">0</b></div>
+    <button id="again" type="button">再煉一爐</button>
+  </div>
+</div>
+
+
+<script>
+/* ==========================================================================
+   ① 纯逻辑层 —— 与 tower13.html **逐字节相同**，一个字符都没改。
+      DOM-free，可以被 new Function 原样抽出来在裸 Node 里跑。
+   ========================================================================== */
+var Logic = (function(){
+    'use strict';
+
+    /* ---------------- 世界常量 ---------------- */
+    var CW = 380;                 // 内腔宽（世界单位）
+    var CH = 520;                 // 内腔高
+    var WALL = 18;                // 画出来的墙厚（渲染用，不参与物理）
+    var TOP_PAD = 118;            // 容器上沿以上的「持握区」高度（渲染用）
+    var DANGER_Y = CH - 90;       // 危险线高度：静止宝石顶点超过它就结束（= 430）
+    var DT = 1 / 120;             // 固定步长（秒）—— 唯一的时间单位
+
+    var MAX_LEVEL = 10;
+    /* 半径表：严格递增，13 级都塞得下（2×134=268 < 420，容器容量有限） */
+    var RADII = [0, 16, 22, 29, 38, 49, 62, 77, 94, 113, 134];
+    /* 合出该等级的得分（索引 = 合并后的等级；1 级不可被合出） */
+    var SCORE = [0, 0, 10, 25, 50, 90, 150, 240, 380, 580, 900];
+    var NAMES = ['', '石英', '紫水晶', '海蓝宝', '祖母绿', '红宝石',
+                 '托帕石', '蓝宝石', '钻石', '龙晶', '世界核心'];
+    var FILES = ['', 'gems/gem-01-quartz.png', 'gems/gem-02-amethyst.png',
+                 'gems/gem-03-aquamarine.png', 'gems/gem-04-emerald.png',
+                 'gems/gem-05-ruby.png', 'gems/gem-06-topaz.png',
+                 'gems/gem-07-sapphire.png', 'gems/gem-08-diamond.png',
+                 'gems/gem-09-dragoncrystal.png', 'gems/gem-10-worldcore.png'];
+    /* 掉落的只有 1..5 级（权重和 = 1）；6..10 级只能合成得到 */
+    var NEXT_W = [0.32, 0.28, 0.21, 0.13, 0.06];
+
+    /* ---------------- 物理调参（稳定优先，PBD） ----------------
+       用的是 Position-Based Dynamics 的思路：**速度只从位置变化反推**。
+       为什么不用「先冲量、再修正位置」：实测那一版会留下"位置被卡住、
+       速度却一直存在"的幽灵速度 —— 一局静置 8 秒后还有 4 颗宝石
+       |v|=37 单位/秒、坐标却一动不动（x/y 8 秒内一位不差），静止判定永远
+       收敛不了，越线死亡也就永远不触发（300 手都结束不了一局）。
+       改成 PBD 后：位置被接触卡住 ⇒ 位移 = 0 ⇒ 速度 = 0 ⇒ 立刻判静止。
+       而且「落点很深 → 被推出来 → 反推出向上速度」本身就是一个自然的反弹，
+       不需要再手写恢复系数。 */
+    var GRAVITY = 2000;           // 单位/秒²
+    var MAX_V = 1500;             // 速度上限：1500*(1/120)=12.5 单位/步 << 最小直径 32，不穿模
+    var AIR_DRAG = 0.18;          // 每秒速度衰减比例
+    var POS_PCT = 0.85;           // 每次迭代消掉的穿透比例
+    var MAX_CORR = 8;             // 单次迭代最大位置修正（防止大宝石合并时把邻居瞬移弹飞）
+    var ITER = 8;                 // 位置修正迭代次数
+    var VEL_KEEP = 0.98;          // 每步速度保留比例（PBD 的数值阻尼）
+    var VEL_LIM_MIN = 300;        // 反推速度的下限额度（否则贴墙的圆会被"粘"在墙上）
+    var VEL_LIM_K = 1.15;         // …上限 = 进来时的速度 × 1.15 + 40，防止合并把人弹飞
+    var VEL_LIM_ADD = 40;
+    var MERGE_SLOP = 1.2;         // 合并的数值容差：dist ≤ r1+r2+slop 即视为接触
+    var REST_DISP = 0.45;         // 一步位移小于它（≈54 单位/秒）就认为「没在动」
+    var SLEEP_T = 0.30;           // 持续多久算静止（秒）
+    var DROP_CD = 0.18;           // 落子冷却（秒）
+    var SPAWN_Y = CH + 44;        // 出生点：罐口之上 44 单位（幽灵宝石看得见）
+    var SPAWN_VY = -40;           // 出生时给一点初速，避免第一帧就被判成静止
+    var MAX_BODIES = 160;
+
+    /* ---------------- 工具 ---------------- */
+    function clamp(v, lo, hi){ return v < lo ? lo : (v > hi ? hi : v); }
+
+    /* FNV-1a：种子 → 32 位整数。同一种子永远同一起点。 */
+    function hashSeed(seed){
+      var str = String(seed), h = 2166136261;
+      for (var i = 0; i < str.length; i++){
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      h = h >>> 0;
+      return h === 0 ? 0x9E3779B9 : h | 0;
+    }
+
+    /* mulberry32：状态完全存在 state.rng 里，不碰任何全局随机源 */
+    function rnd(s){
+      s.rng = (s.rng + 0x6D2B79F5) | 0;
+      var t = s.rng;
+      t = Math.imul(t ^ (t >>> 15), t | 1);
+      t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    }
+
+    function pickLevel(s){
+      var r = rnd(s), acc = 0;
+      for (var i = 0; i < NEXT_W.length; i++){
+        acc += NEXT_W[i];
+        if (r < acc) return i + 1;
+      }
+      return 1;
+    }
+
+    /* ---------------- 刚体 ---------------- */
+    function makeBody(s, lv, x, y, vx, vy){
+      var r = RADII[lv];
+      var m = r * r;                 // 质量 ∝ 面积
+      return {
+        id: s.idc++, lv: lv, x: x, y: y, vx: vx || 0, vy: vy || 0,
+        px: x, py: y,              // 上一步的位置（PBD 反推速度用）
+        r: r, ima: 1 / m,          // 逆质量（位置修正的权重）
+        rest: false, restT: 0, pen: 0, disp: 0, spd: 0, overT: 0,
+        ang: 0,                     // 视觉滚动角
+        born: s.tick
+      };
+    }
+
+    function addBody(s, lv, x, y, vx, vy){
+      var b = makeBody(s, lv, x, y, vx, vy);
+      s.bodies.push(b);
+      s.seq++;
+      return b;
+    }
+
+    /* ---------------- 合并 ---------------- */
+    /* 判定在**每步最前面**循环执行：新圆可以立刻再触发同级合并（连锁）。 */
+    function mergePass(s){
+      var guard = 0;
+      while (guard++ < 200){
+        var bs = s.bodies, n = bs.length;
+        var fi = -1, fj = -1;
+        for (var i = 0; i < n && fi < 0; i++){
+          var a = bs[i];
+          if (a.lv >= MAX_LEVEL) continue;   // 满级不再合并
+          for (var j = i + 1; j < n; j++){
+            var b = bs[j];
+            if (b.lv !== a.lv) continue;     // 只有同级才合并
+            var dx = b.x - a.x, dy = b.y - a.y;
+            var rr = a.r + b.r + MERGE_SLOP;
+            if (dx * dx + dy * dy <= rr * rr){ fi = i; fj = j; break; }
+          }
+        }
+        if (fi < 0) break;
+        doMerge(s, fi, fj);
+      }
+    }
+
+    function doMerge(s, i, j){
+      var bs = s.bodies;
+      var a = bs[i], b = bs[j];
+      var lv = a.lv + 1;                       // 同级 ⇒ 等质量 ⇒ 中点就是质心
+      var mx = (a.x + b.x) * 0.5, my = (a.y + b.y) * 0.5;
+      var mvx = (a.vx + b.vx) * 0.5, mvy = (a.vy + b.vy) * 0.5;
+      var nb = addBody(s, lv, mx, my, mvx, mvy);
+      /* 先 push 再 splice：i/j 都在新元素之前，下标不受影响 */
+      bs.splice(j, 1);
+      bs.splice(i, 1);
+
+      var pts = SCORE[lv];
+      s.score += pts;
+      s.merges++;
+      s.chain++;
+      if (lv > s.maxLevel) s.maxLevel = lv;
+      s.events.push({ t: 'merge', lv: lv, x: mx, y: my, pts: pts,
+                      chain: s.chain, id: nb.id });
+      return nb;
+    }
+
+    /* ---------------- ① 预测（半隐式欧拉，固定 DT） ----------------
+       只动位置，不动「逻辑上的速度」：速度是位置求解完再反推出来的。
+       静止体也照样预测重力 —— 它被接触顶回来时位移为 0，速度自然又是 0，
+       而一旦支撑被合并掉，重力会让它真的往下掉，「睡着的圆悬空」不会发生。 */
+    function predict(s){
+      var bs = s.bodies;
+      var d = 1 - AIR_DRAG * DT;
+      for (var i = 0; i < bs.length; i++){
+        var b = bs[i];
+        b.px = b.x; b.py = b.y;
+        b.vy -= GRAVITY * DT;
+        b.vx *= d; b.vy *= d;
+        var sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+        if (sp > MAX_V){
+          var k = MAX_V / sp;
+          b.vx *= k; b.vy *= k;
+        }
+        b.x += b.vx * DT;
+        b.y += b.vy * DT;
+        /* 安全网：真出 NaN 也不能让整盘烂掉。计数暴露给测试，nanFix 必须为 0。 */
+        if (!isFinite(b.x) || !isFinite(b.y) || !isFinite(b.vx) || !isFinite(b.vy)){
+          b.x = CW * 0.5; b.y = CH * 0.5; b.vx = 0; b.vy = 0;
+          s.nanFix++;
+        }
+      }
+    }
+
+    /* ---------------- ② 位置求解（唯一改变位置的地方） ----------------
+       质心加权 + 8 次迭代。墙/底在**每次迭代**都夹一遍，所以穿墙在结构上
+       不可能发生 —— 不是靠调参，是靠「最后一步一定是夹取」。 */
+    function solve(s){
+      var bs = s.bodies, n = bs.length, it, i, j;
+      for (it = 0; it < ITER; it++){
+        for (i = 0; i < n; i++){
+          var a = bs[i];
+          for (j = i + 1; j < n; j++){
+            var b = bs[j];
+            var dx = b.x - a.x, dy = b.y - a.y;
+            var rs = a.r + b.r;
+            var d2 = dx * dx + dy * dy;
+            if (d2 >= rs * rs) continue;          // 没碰：最常见分支，放最前面
+            var d = Math.sqrt(d2), nx, ny;
+            if (d < 1e-6){ nx = 1; ny = 0; d = 1e-6; }  // 完全重合：给定方向，避免除零
+            else { nx = dx / d; ny = dy / d; }
+            var pen = rs - d;
+            var corr = pen * POS_PCT;
+            if (corr > MAX_CORR) corr = MAX_CORR;
+            var tot = a.ima + b.ima;
+            var ka = a.ima / tot, kb = b.ima / tot;
+            a.x -= nx * corr * ka; a.y -= ny * corr * ka;
+            b.x += nx * corr * kb; b.y += ny * corr * kb;
+            if (pen > a.pen) a.pen = pen;
+            if (pen > b.pen) b.pen = pen;
+          }
+        }
+        /* 墙与底：每轮都夹一次 ⇒ 墙永远赢 */
+        for (i = 0; i < n; i++){
+          var w = bs[i];
+          if (w.x < w.r) w.x = w.r;
+          else if (w.x > CW - w.r) w.x = CW - w.r;
+          if (w.y < w.r) w.y = w.r;
+        }
+      }
+    }
+
+    /* ---------------- ③ 速度反推 + 静止判定 ----------------
+       v = (x - x_prev) / DT。
+       · 位置被接触顶回原处 ⇒ 位移 0 ⇒ 速度 0 ⇒ 静止（这是「不永久抖动」的根）。
+       · 落得很深被顶出来 ⇒ 反推出向上的速度 ⇒ 自然反弹。
+       · 上限 = max(进来时速度 × 1.15 + 40, 300)：合并瞬间把邻居顶开时，
+         修正量再大也不会变成弹射器。 */
+    function derive(s){
+      var bs = s.bodies;
+      for (var i = 0; i < bs.length; i++){
+        var b = bs[i];
+        var dx = b.x - b.px, dy = b.y - b.py;
+        var nvx = dx / DT, nvy = dy / DT;
+        var sp = Math.sqrt(nvx * nvx + nvy * nvy);
+        var vin = Math.sqrt(b.vx * b.vx + b.vy * b.vy);
+        var lim = vin * VEL_LIM_K + VEL_LIM_ADD;
+        if (lim < VEL_LIM_MIN) lim = VEL_LIM_MIN;
+        if (sp > lim){
+          var k = lim / sp;
+          nvx *= k; nvy *= k;
+          sp = lim;
+        }
+        b.vx = nvx * VEL_KEEP;
+        b.vy = nvy * VEL_KEEP;
+        b.spd = sp;
+        b.disp = Math.sqrt(dx * dx + dy * dy);
+        b.ang += dx / b.r;            // 滚动：横向位移 → 视觉转角
+        if (b.disp < REST_DISP) b.restT += DT; else b.restT = 0;
+        if (b.restT >= SLEEP_T){
+          b.rest = true;
+          b.vx = 0; b.vy = 0;         // 硬清零 = 永久抖动的刹车
+        } else {
+          b.rest = false;
+        }
+        b.pen = 0;
+      }
+    }
+
+    /* ---------------- 越线结束 ----------------
+       主规则（契约要求）：**任意静止圆的顶点高于危险线 ⇒ 立刻结束**。
+       实测补上的两条保险丝（都是被真实盘面逼出来的，不是想当然）：
+       ① 「卡在线上」：被挤压的圆可能既不动、又永远达不到 rest 的判定，
+          于是一局怎么都结束不了（PBD 之前实测 300 手跑完一局都没结束）。
+          这里用「顶点过线 + 一步位移 < 1.2 单位」累计 0.45 秒。
+          下落中的宝石位移有 5~12 单位/步，不会被误判 —— 实测下落穿过
+          危险线的最大连续时间是 0.375 秒。
+       ② 「溢出罐口」：圆心跑到容器上沿 30 单位以上（被挤飞出去了）⇒ 立刻结束。
+          没有这条时实测有 5867 个「宝石跑到罐口以上」的步数。 */
+    var OVER_STUCK_T = 0.45;
+    var SPILL_Y = CH + 110;   // 必须远高于出生点（SPAWN_Y = CH+44），否则每颗新宝石都会触发「溢出」
+
+    function gameOverCheck(s){
+      var bs = s.bodies;
+      for (var i = 0; i < bs.length; i++){
+        var b = bs[i];
+        var top = b.y + b.r;
+        if (b.rest && top > DANGER_Y){
+          return finish(s, 'rest', b);
+        }
+        if (top > DANGER_Y && b.disp < 1.2){
+          b.overT += DT;
+          if (b.overT >= OVER_STUCK_T) return finish(s, 'stuck', b);
+        } else {
+          b.overT = 0;
+        }
+        if (b.y > SPILL_Y){
+          return finish(s, 'spill', b);
+        }
+      }
+      return false;
+    }
+
+    function finish(s, why, b){
+      s.ended = true;
+      s.endedAt = s.tick;
+      s.endReason = why;
+      s.events.push({ t: 'over', reason: why, lv: b.lv, x: b.x, y: b.y, id: b.id });
+      return true;
+    }
+
+    /* ---------------- 一步 ---------------- */
+    function tick(s){
+      s.tick++;
+      if (s.cd > 0){ s.cd -= DT; if (s.cd < 0) s.cd = 0; }
+      s.chain = 0;
+      mergePass(s);                     // ① 先合并（新圆立刻可以参与连锁）
+      predict(s);                       // ② 重力 + 阻尼 + 速度上限（固定 DT）
+      solve(s);                         // ③ 圆-圆 + 墙/底（8 次迭代，只动位置）
+      derive(s);                        // ④ 速度从位移反推 + 静止判定
+      if (!s.ended) gameOverCheck(s);   // ⑤ 越线结束
+    }
+
+    /* ---------------- 公开 API ---------------- */
+    function create(seed){
+      if (seed === undefined || seed === null) seed = 1;
+      var s = {
+        seed: seed, rng: hashSeed(seed),
+        tick: 0, cd: 0, score: 0, ended: false, endedAt: 0, endReason: '',
+        next: 1, bodies: [], idc: 1, seq: 0,
+        merges: 0, maxLevel: 1, chain: 0, drops: 0,
+        nanFix: 0, events: []
+      };
+      s.next = pickLevel(s);
+      return s;
+    }
+
+    /* 落一手：x 是世界坐标（会被夹到 [r, CW-r]，所以贴边落子也是合法的） */
+    function drop(s, x){
+      if (s.ended || s.cd > 0 || s.bodies.length >= MAX_BODIES) return -1;
+      var lv = s.next, r = RADII[lv];
+      var px = clamp(x, r, CW - r);
+      var b = addBody(s, lv, px, SPAWN_Y, 0, SPAWN_VY);
+      s.next = pickLevel(s);
+      s.cd = DROP_CD;
+      s.drops++;
+      s.events.push({ t: 'drop', lv: lv, x: px, y: SPAWN_Y, id: b.id });
+      return b.id;
+    }
+
+    /* 构造局面用（测试 / 开场垫底）：直接放一个圆，不消耗 RNG */
+    function spawn(s, lv, x, y, vx, vy){
+      lv = clamp(lv | 0, 1, MAX_LEVEL);
+      if (lv > s.maxLevel) s.maxLevel = lv;
+      var r = RADII[lv];
+      return addBody(s, lv, clamp(x, r, CW - r), y, vx, vy).id;
+    }
+
+    function step(s, n){
+      n = (n | 0) || 1;
+      for (var i = 0; i < n; i++) tick(s);
+      return s;
+    }
+
+    /* 盘面快照：字段顺序固定，可以直接 JSON.stringify 逐字符对比 */
+    function snapshot(s){
+      var out = {
+        tick: s.tick, seed: s.seed, score: s.score, ended: s.ended ? 1 : 0,
+        endReason: s.endReason,
+        next: s.next, merges: s.merges, maxLevel: s.maxLevel, drops: s.drops,
+        cd: s.cd, rng: s.rng, nanFix: s.nanFix,
+        cw: CW, ch: CH, dangerY: DANGER_Y, count: s.bodies.length,
+        bodies: []
+      };
+      for (var i = 0; i < s.bodies.length; i++){
+        var b = s.bodies[i];
+        out.bodies.push({ id: b.id, lv: b.lv, x: b.x, y: b.y,
+                          vx: b.vx, vy: b.vy, r: b.r, rest: b.rest ? 1 : 0 });
+      }
+      return out;
+    }
+
+    /* 盘面指纹（FNV-1a over JSON）：报告里用它证明「逐字段相同」 */
+    function hash(s){
+      var str = JSON.stringify(snapshot(s)), h = 2166136261;
+      for (var i = 0; i < str.length; i++){
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+      }
+      return (h >>> 0).toString(16);
+    }
+
+    /* 事件队列：渲染层消费（飘分 / 抖动），逻辑层不管 */
+    function drain(s){
+      var out = s.events;
+      s.events = [];
+      return out;
+    }
+
+    return {
+      /* 常量 */
+      CW: CW, CH: CH, WALL: WALL, TOP_PAD: TOP_PAD, DANGER_Y: DANGER_Y,
+      SPAWN_Y: SPAWN_Y, SPILL_Y: SPILL_Y,
+      DT: DT, MAX_LEVEL: MAX_LEVEL, RADII: RADII, SCORE: SCORE,
+      NAMES: NAMES, FILES: FILES, NEXT_W: NEXT_W,
+      CONST: { GRAVITY: GRAVITY, MAX_V: MAX_V, AIR_DRAG: AIR_DRAG,
+               POS_PCT: POS_PCT, MAX_CORR: MAX_CORR, ITER: ITER,
+               VEL_KEEP: VEL_KEEP, VEL_LIM_MIN: VEL_LIM_MIN,
+               VEL_LIM_K: VEL_LIM_K, VEL_LIM_ADD: VEL_LIM_ADD,
+               MERGE_SLOP: MERGE_SLOP, REST_DISP: REST_DISP,
+               SLEEP_T: SLEEP_T, DROP_CD: DROP_CD,
+               SPAWN_Y: SPAWN_Y, SPAWN_VY: SPAWN_VY, MAX_BODIES: MAX_BODIES },
+      /* 玩法 */
+      create: create, drop: drop, step: step, snapshot: snapshot,
+      spawn: spawn, hash: hash, drain: drain,
+      /* 给测试/工具用的纯函数 */
+      clamp: clamp, hashSeed: hashSeed, pickLevel: pickLevel
+    };
+  })();
+
+/* ==========================================================================
+   ② 表现层 —— 只换外壳，不动物理。
+   ========================================================================== */
+/* ============================================================================
+   tower14 表现层 —— 把 tower13 的物理内核接进 D · 东方水墨仙侠丹炉
+   ----------------------------------------------------------------------------
+   这一层只做三件事：
+     ① 把 #stage 的真实矩形量成「世界坐标 → 舞台像素」的映射
+     ② 在透明 canvas 上画宝石（真实的 gems/*.png，随滚动旋转）
+     ③ 把内核状态接到 D 的 DOM：#score / #best / #merges / #holdImg / #holdName
+        / #danger / #restartBtn / #over
+   **不画炉壁、不画炉腔底色** —— 那是 .body / #stage 的 CSS，画上去就把水墨材质盖掉了。
+
+   ⚠️ 世界尺寸是 380×520（内核常量，逐字节不许动），D 的 #stage 是 260×440：
+      宽高比不同，所以**等比缩放 + 贴底**，顶部留出「出丹口」。
+      实测：s = min(260/380, 440/617) = 0.684 → 内腔 260×355.8，顶部留 84.2px。
+      84px 不是浪费：托在罐口的那颗丹宝石（世界 y=SPAWN_Y=564，r 最大 49）
+      顶到 617 世界单位，正好把这块用满。
+   ========================================================================== */
+(function(){
+  'use strict';
+
+  var L = Logic;
+
+  var stage = document.getElementById('stage');
+  var cv = document.getElementById('cv');
+  var ctx = cv.getContext('2d');
+  var dangerEl = document.getElementById('danger');
+  var elScore = document.getElementById('score');
+  var elBest = document.getElementById('best');
+  var elMerges = document.getElementById('merges');
+  var elHoldImg = document.getElementById('holdImg');
+  var elHoldName = document.getElementById('holdName');
+  var elOver = document.getElementById('over');
+  var elOverScore = document.getElementById('overScore');
+  var elOverSub = document.getElementById('overSub');
+  var elOverBest = document.getElementById('overBest');
+  var elAgain = document.getElementById('again');
+  var elRestart = document.getElementById('restartBtn');
+  var elHint = document.getElementById('hintText');
+
+  /* 世界坐标映射：ox/oy = 世界原点在舞台里的像素位置；s = 每世界单位多少像素 */
+  var view = { w: 0, h: 0, s: 1, ox: 0, oy: 0 };
+  var S = null, aimX = L.CW / 2, best = 0, uiScale = 1;
+  var shake = 0, popups = [], rings = [];
+  var holdLv = 0;
+
+  try { best = parseInt(localStorage.getItem('tower14.best') || '0', 10) || 0; } catch (e) { best = 0; }
+
+  function nf(n){ return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  function clamp(v, lo, hi){ return v < lo ? lo : (v > hi ? hi : v); }
+
+  /* ---------------- 素材 ---------------- */
+  var imgs = [];
+  for (var lv0 = 1; lv0 <= L.MAX_LEVEL; lv0++){
+    (function(lv){
+      var im = new Image();
+      im.decoding = 'async';
+      im.onload = function(){ imgs[lv] = { el: im, ok: true }; };
+      im.onerror = function(){ imgs[lv] = { el: null, ok: false }; };
+      im.src = L.FILES[lv];
+    })(lv0);
+  }
+  var FALLBACK = ['', '#b9bfc4', '#9b7fc4', '#7fc4bb', '#5f9f6c', '#b34a3c',
+                  '#d79a3c', '#3f5f9f', '#cfe6ef', '#7a5cff', '#e0b23c'];
+
+  /* ---------------- 尺寸 / 危险线 ---------------- */
+  /* 外壳是按 390×844 画的，而 #stage 是定高 440px 的绝对定位块：
+     桌面浏览器把窗口压到 700 以下时，丹炉会顶到页脚外面去（实测 360×640 时
+     sill 底 690 > foot 顶 584）。这里整块等比缩，缩完 fit() 重新量矩形，
+     画布背店与设备像素仍然 1:1，不会糊。 */
+  function fitApp(){
+    var vh = window.innerHeight || 844;
+    var k = Math.min(1, vh / 844);
+    var app = document.getElementById('app');
+    if (!app) return;
+    /* 布局高度钉在 844（设计稿），视觉用 transform 缩放 ——
+       否则 flex 会把 #ding 压扁，而绝对定位的炉底/四足不跟着动，
+       页脚就会和炉脚叠在一起（实测 360×640：sill 底 690 > foot 顶 584）。 */
+    app.style.height = Math.max(844, vh) + 'px';
+    if (k < 0.999){
+      app.style.transformOrigin = 'top center';
+      app.style.transform = 'scale(' + k.toFixed(4) + ')';
+    } else {
+      app.style.transform = '';
+      app.style.transformOrigin = '';
+    }
+    uiScale = k;
+  }
+
+  function fit(){
+    var r = stage.getBoundingClientRect();
+    var w = r.width, h = r.height;
+    if (!w || !h) return;
+    /* 世界最上沿：托着的丹宝石顶点（SPAWN_Y + 最大掉落半径）—— 用它算缩放，
+       保证罐口那颗被托住的宝石一定完整可见，不会被 #stage 的 overflow 切掉 */
+    var topNeed = L.SPAWN_Y + L.RADII[5] + 4;
+    var s = Math.min(w / L.CW, h / topNeed);
+
+    var dpr = Math.min(2.5, window.devicePixelRatio || 1);
+    view.w = w; view.h = h; view.s = s;
+    view.ox = (w - L.CW * s) / 2;     // 内腔水平居中
+    view.oy = h;                       // 内腔底边 = 舞台底边（宝石落在炉底前沿上）
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+    /* 危险线：**唯一来源是内核的 DANGER_Y**。DOM 的 top 与 data-danger-offset
+       都从它算出来，不存在「CSS 一套、物理一套」。 */
+    var dangerPx = view.oy - L.DANGER_Y * s;          // 视觉像素（getBoundingClientRect 口径）
+    dangerEl.style.top = (dangerPx / uiScale).toFixed(4) + 'px';   // 布局像素（被 transform 缩放过）
+    /* data-* 用四个互不混淆的口径，别让「内腔」「世界」「舞台」三个词打架：
+         arena-*   物理世界尺寸（内核常量，单位=世界单位）
+         stage-*   舞台 CSS 像素（art-director 的内腔矩形）
+         world-px  世界在舞台里实际画多大（等比缩放后）
+         danger-offset  危险线距舞台顶边的**视觉**像素（验收公式用它） */
+    stage.dataset.arenaW = String(L.CW);
+    stage.dataset.arenaH = String(L.CH);
+    stage.dataset.stageW = w.toFixed(1);
+    stage.dataset.stageH = h.toFixed(1);
+    stage.dataset.worldPx = (L.CW * s).toFixed(2) + 'x' + (L.CH * s).toFixed(2);
+    stage.dataset.scale = s.toFixed(4);
+    stage.dataset.uiScale = uiScale.toFixed(4);
+    stage.dataset.dangerOffset = dangerPx.toFixed(4);
+    stage.dataset.dangerOffsetLayout = (dangerPx / uiScale).toFixed(4);
+  }
+  function sx(x){ return view.ox + x * view.s; }
+  function sy(y){ return view.oy - y * view.s; }
+  function relayout(){ fitApp(); fit(); }
+  window.addEventListener('resize', relayout);
+  if (window.ResizeObserver) new ResizeObserver(function(){ fit(); }).observe(stage);
+
+  /* ---------------- 一局 ---------------- */
+  function newGame(seed){
+    S = L.create(seed === undefined ? (Date.now() % 100000) : seed);
+    /* 开局垫底：五颗小丹石已经躺在炉底（间距 ≥ r1+r2+3，不能重叠，
+       否则物理会把它们推开、开局自己滑到两边） */
+    L.spawn(S, 1,  95, 16);
+    L.spawn(S, 2, 136, 22);
+    L.spawn(S, 3, 190, 29);
+    L.spawn(S, 2, 244, 22);
+    L.spawn(S, 1, 285, 16);
+    L.step(S, 1);
+    aimX = L.CW / 2;
+    popups = []; rings = []; shake = 0;
+    elOver.classList.add('hidden');
+    holdLv = 0;
+    syncHold();
+    syncHud(true);
+    fit();
+  }
+
+  function syncHud(force){
+    if (S.score > best){
+      best = S.score;
+      try { localStorage.setItem('tower14.best', String(best)); } catch (e) {}
+    }
+    var txt = nf(S.score);
+    if (elScore.textContent !== txt) elScore.textContent = txt;
+    var bTxt = nf(best);
+    if (elBest.textContent !== bTxt) elBest.textContent = bTxt;
+    elMerges.textContent = String(S.merges);
+  }
+
+  function syncHold(){
+    var lv = S.next;
+    if (lv === holdLv) return;
+    holdLv = lv;
+    elHoldImg.src = L.FILES[lv];
+    elHoldImg.alt = L.NAMES[lv];
+    elHoldName.textContent = L.NAMES[lv];
+  }
+
+  function showOver(){
+    if (S.score > best) best = S.score;
+    elOverScore.textContent = nf(S.score);
+    elOverSub.textContent = '最高丹品 · ' + L.NAMES[S.maxLevel] + ' · 合炼 ' + S.merges + ' 次';
+    elOverBest.textContent = nf(best);
+    elOver.classList.remove('hidden');
+  }
+
+  /* ---------------- 输入 ---------------- */
+  function worldXFromClient(clientX){
+    var r = stage.getBoundingClientRect();
+    return (clientX - r.left - view.ox) / view.s;
+  }
+  function aimAt(clientX){
+    var rad = L.RADII[S.next];
+    aimX = clamp(worldXFromClient(clientX), rad, L.CW - rad);
+  }
+  function doDrop(){
+    if (!S || S.ended) return;
+    var rad = L.RADII[S.next];
+    var id = L.drop(S, clamp(aimX, rad, L.CW - rad));
+    if (id > 0) syncHold();
+  }
+
+  var dragging = false;
+  stage.addEventListener('pointerdown', function(e){
+    if (!S || S.ended) return;
+    dragging = true;
+    if (stage.setPointerCapture) { try { stage.setPointerCapture(e.pointerId); } catch (err) {} }
+    aimAt(e.clientX);
+    e.preventDefault();
+  }, { passive: false });
+  stage.addEventListener('pointermove', function(e){
+    if (!S || S.ended) return;
+    if (dragging || (e.pointerType === 'mouse' && e.buttons === 0)) aimAt(e.clientX);
+  }, { passive: true });
+  stage.addEventListener('pointerup', function(e){
+    if (!dragging) return;
+    dragging = false;
+    aimAt(e.clientX);
+    doDrop();
+    e.preventDefault();
+  }, { passive: false });
+  stage.addEventListener('pointercancel', function(){ dragging = false; });
+
+  window.addEventListener('keydown', function(e){
+    if (!S) return;
+    var rad = L.RADII[S.next];
+    if (e.key === 'ArrowLeft'){ aimX = clamp(aimX - 12, rad, L.CW - rad); e.preventDefault(); }
+    else if (e.key === 'ArrowRight'){ aimX = clamp(aimX + 12, rad, L.CW - rad); e.preventDefault(); }
+    else if (e.key === ' ' || e.key === 'Enter'){ doDrop(); e.preventDefault(); }
+  });
+
+  elRestart.addEventListener('click', function(){ newGame(); });
+  elAgain.addEventListener('click', function(){ newGame(); });
+
+  /* ---------------- 绘制 ---------------- */
+  /* 只画宝石 / 瞄准 / 飘分。炉壁、炉腔、炉口、炉底全部留给 CSS。 */
+  function draw(){
+    var w = view.w, h = view.h, s = view.s;
+    ctx.clearRect(0, 0, w, h);
+    if (!S) return;
+
+    ctx.save();
+    if (shake > 0.2){
+      ctx.translate(Math.sin(S.tick * 41.3) * shake * 0.7, Math.cos(S.tick * 37.1) * shake * 0.7);
+    }
+
+    var bs = S.bodies;
+
+    /* 丹火将溢：有宝石顶到危险线附近时，线上的红光加重（画布在 #danger 之下） */
+    var overheat = 0;
+    for (var i = 0; i < bs.length; i++){
+      var t = bs[i].y + bs[i].r;
+      if (t > L.DANGER_Y - 70) overheat = Math.max(overheat, (t - (L.DANGER_Y - 70)) / 70);
+    }
+    if (overheat > 0){
+      var dy = sy(L.DANGER_Y);
+      var g = ctx.createLinearGradient(0, dy - 26, 0, dy + 26);
+      g.addColorStop(0, 'rgba(178,58,44,0)');
+      g.addColorStop(0.5, 'rgba(178,58,44,' + (0.10 + 0.16 * overheat).toFixed(3) + ')');
+      g.addColorStop(1, 'rgba(178,58,44,0)');
+      ctx.fillStyle = g;
+      ctx.fillRect(sx(0), dy - 26, L.CW * s, 52);
+    }
+
+    /* 宝石 */
+    for (i = 0; i < bs.length; i++){
+      var b = bs[i];
+      var cx = sx(b.x), cy = sy(b.y), R = b.r * s;
+
+      /* 墨影：投在炉底/下层宝石上，给一点纵深 */
+      ctx.save();
+      ctx.globalAlpha = 0.30;
+      var sg = ctx.createRadialGradient(cx, cy + R * 0.55, R * 0.1, cx, cy + R * 0.55, R * 0.95);
+      sg.addColorStop(0, 'rgba(46,32,16,.75)');
+      sg.addColorStop(1, 'rgba(46,32,16,0)');
+      ctx.fillStyle = sg;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy + R * 0.55, R * 0.92, R * 0.5, 0, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.restore();
+
+      var age = (S.tick - b.born) * L.DT;
+      var pop = age < 0.18 ? (0.7 + 0.3 * (age / 0.18)) : 1;
+      var img = imgs[b.lv];
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(b.ang);
+      if (img && img.ok){
+        ctx.drawImage(img.el, -R * pop, -R * pop, R * 2 * pop, R * 2 * pop);
+      } else {
+        ctx.fillStyle = FALLBACK[b.lv] || '#b9bfc4';
+        ctx.beginPath(); ctx.arc(0, 0, R * pop, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = 'rgba(36,31,24,.7)';
+        ctx.lineWidth = Math.max(1, 1.6 * s);
+        ctx.stroke();
+        ctx.fillStyle = '#241F18';
+        ctx.font = '700 ' + Math.round(R * 0.9) + 'px "KaiTi",serif';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(String(b.lv), 0, R * 0.04);
+      }
+      ctx.restore();
+
+      /* 压线的那颗：朱砂圈标出来（结算时解释「为什么输」） */
+      if (S.ended && b.rest && b.y + b.r > L.DANGER_Y){
+        ctx.save();
+        ctx.strokeStyle = 'rgba(178,58,44,.9)';
+        ctx.lineWidth = Math.max(2, 2.6 * s);
+        ctx.beginPath(); ctx.arc(cx, cy, R + 3 * s, 0, Math.PI * 2); ctx.stroke();
+        ctx.restore();
+      }
+    }
+
+    /* 瞄准：托在罐口的丹宝石 + 墨线 + 落点 */
+    if (!S.ended){
+      var lv = S.next, ar = L.RADII[lv];
+      var ax = sx(aimX), ay = sy(L.SPAWN_Y), aR = ar * s;
+
+      /* 落点：沿这个 x 往下第一颗挡路的宝石的表面 */
+      var surf = 0;
+      for (var q = 0; q < bs.length; q++){
+        var nb = bs[q];
+        if (Math.abs(nb.x - aimX) < nb.r + ar * 0.86){
+          var t2 = nb.y + nb.r;
+          if (t2 > surf) surf = t2;
+        }
+      }
+
+      ctx.save();
+      ctx.strokeStyle = 'rgba(169,59,44,.42)';
+      ctx.lineWidth = Math.max(1, s);
+      ctx.setLineDash([4 * s, 5 * s]);
+      ctx.beginPath();
+      ctx.moveTo(ax, ay + aR * 0.7);
+      ctx.lineTo(ax, sy(surf));
+      ctx.stroke();
+      ctx.restore();
+
+      /* 托住的丹宝石：金色晕 + 本体 */
+      ctx.save();
+      ctx.globalAlpha = 0.9;
+      var halo = ctx.createRadialGradient(ax, ay, aR * 0.4, ax, ay, aR * 1.5);
+      halo.addColorStop(0, 'rgba(226,196,137,.34)');
+      halo.addColorStop(1, 'rgba(226,196,137,0)');
+      ctx.fillStyle = halo;
+      ctx.beginPath(); ctx.arc(ax, ay, aR * 1.5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+
+      ctx.save();
+      var gimg = imgs[lv];
+      if (gimg && gimg.ok){
+        ctx.drawImage(gimg.el, ax - aR, ay - aR, aR * 2, aR * 2);
+      } else {
+        ctx.fillStyle = FALLBACK[lv] || '#b9bfc4';
+        ctx.beginPath(); ctx.arc(ax, ay, aR, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+
+      /* 落点：朱砂扁弧 */
+      ctx.save();
+      ctx.strokeStyle = 'rgba(169,59,44,.5)';
+      ctx.lineWidth = Math.max(1.2, 1.6 * s);
+      ctx.beginPath();
+      ctx.ellipse(ax, sy(surf) - 1.5 * s, aR * 0.78, aR * 0.2, 0, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* 合炼的朱砂涟漪 */
+    for (var r = 0; r < rings.length; r++){
+      var rg = rings[r];
+      var k = rg.age / rg.life;
+      if (k > 1) continue;
+      ctx.save();
+      ctx.globalAlpha = (1 - k) * 0.85;
+      ctx.strokeStyle = rg.color;
+      ctx.lineWidth = Math.max(1, (2.4 - 1.8 * k) * s);
+      ctx.beginPath();
+      ctx.arc(sx(rg.x), sy(rg.y), (rg.r0 + (rg.r1 - rg.r0) * k) * s, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    /* 飘分：楷体朱砂 */
+    for (var p = 0; p < popups.length; p++){
+      var q2 = popups[p];
+      var kk = q2.age / q2.life;
+      var a = kk < 0.15 ? kk / 0.15 : (1 - (kk - 0.15) / 0.85);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, Math.min(1, a));
+      ctx.font = '700 ' + Math.round((13 + 7 * Math.min(1, q2.lv / 6)) * Math.max(0.85, s)) +
+                 'px "KaiTi","STKaiti","Songti SC",serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      var tx = sx(q2.x), ty = sy(q2.y) - 14 * s - kk * 40 * s;
+      ctx.lineWidth = 3 * s;
+      ctx.strokeStyle = 'rgba(244,236,218,.92)';
+      ctx.strokeText(q2.txt, tx, ty);
+      ctx.fillStyle = q2.lv >= 7 ? '#8E2A1E' : '#B23A2C';
+      ctx.fillText(q2.txt, tx, ty);
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  /* ---------------- 主循环：固定步长累加器 ---------------- */
+  var last = 0, acc = 0;
+  function frame(now){
+    if (!last) last = now;
+    var dt = (now - last) / 1000;
+    last = now;
+    if (dt > 0.1) dt = 0.1;
+    if (S){
+      acc += dt;
+      var guard = 0;
+      while (acc >= L.DT && guard++ < 8){
+        L.step(S, 1);
+        acc -= L.DT;
+      }
+      if (acc > L.DT * 8) acc = 0;
+
+      var evs = L.drain(S);
+      for (var i = 0; i < evs.length; i++){
+        var e = evs[i];
+        if (e.t === 'merge'){
+          popups.push({ x: e.x, y: e.y, txt: '+' + e.pts, age: 0, life: 0.9, lv: e.lv });
+          rings.push({ x: e.x, y: e.y, r0: L.RADII[e.lv] * 0.5, r1: L.RADII[e.lv] * 1.9,
+                       age: 0, life: 0.55, color: e.lv >= 6 ? '#C8913A' : '#B23A2C' });
+          if (e.lv >= 5) shake = Math.min(8, shake + (e.lv - 4) * 1.6);
+        }
+      }
+      for (i = popups.length - 1; i >= 0; i--){
+        popups[i].age += dt;
+        if (popups[i].age >= popups[i].life) popups.splice(i, 1);
+      }
+      for (i = rings.length - 1; i >= 0; i--){
+        rings[i].age += dt;
+        if (rings[i].age >= rings[i].life) rings.splice(i, 1);
+      }
+      shake *= Math.pow(0.0016, dt);
+      if (shake < 0.2) shake = 0;
+
+      syncHud(false);
+      if (S.ended && elOver.classList.contains('hidden')) showOver();
+    }
+    draw();
+    requestAnimationFrame(frame);
+  }
+
+  /* ---------------- 启动 ---------------- */
+  fitApp();
+  fit();
+  newGame();
+  requestAnimationFrame(frame);
+
+  /* 旧截图脚本 spike/_shot.mjs 会探测 window.__gate.tap 并传「6 列的第几列」 */
+  window.__gate = {
+    tap: function(col){
+      var c = clamp((col === undefined || col === null) ? 2 : (col | 0), 0, 5);
+      var x = L.CW * (c + 0.5) / 6;
+      if (S && !S.ended){
+        aimX = x;
+        var id = L.drop(S, x);
+        if (id > 0) syncHold();
+        return id;
+      }
+      return -1;
+    },
+    aim: function(x){ aimX = clamp(x, 0, L.CW); return aimX; }
+  };
+
+  /* 控制台 / CDP 探针入口 */
+  window.__tower14 = {
+    Logic: L,
+    state: function(){ return S; },
+    snapshot: function(){ return L.snapshot(S); },
+    hash: function(){ return L.hash(S); },
+    drop: function(x){ aimX = x; doDrop(); return S.bodies.length; },
+    newGame: function(seed){ newGame(seed); return S.seed; },
+    geometry: function(){
+      var r = stage.getBoundingClientRect();
+      var dr = dangerEl.getBoundingClientRect();
+      return {
+        stage: { x: r.left, y: r.top, w: r.width, h: r.height },
+        scale: view.s,
+        world: { cw: L.CW, ch: L.CH, dangerY: L.DANGER_Y, spawnY: L.SPAWN_Y },
+        arenaPx: { w: L.CW * view.s, h: L.CH * view.s },
+        dangerOffsetPx: parseFloat(stage.dataset.dangerOffset),
+        dangerDomY: dr.top,
+        dangerPhysicsY: r.top + (r.height - L.DANGER_Y * view.s),
+        sameSource: Math.abs(dr.top - (r.top + (r.height - L.DANGER_Y * view.s))) < 0.01
+      };
+    },
+    fill: function(n, seed){
+      /* 快进 n 手（截图/探针用）。注意这会在一帧里堆出几十个合炼事件，
+         所以结束时把飘分/涟漪清掉 —— 否则截图上是满屏叠着的「+25」。 */
+      newGame(seed === undefined ? 13 : seed);
+      var i = 0;
+      while (i < n){
+        if (L.drop(S, 30 + ((i * 137) % (L.CW - 60))) > 0) i++;
+        L.step(S, 40);
+        if (S.ended) break;
+      }
+      L.step(S, 120);
+      L.drain(S);
+      popups = []; rings = []; shake = 0;
+      return L.snapshot(S);
+    }
+  };
+
+  window.__tower14Ready = true;
+})();
+</script>
+</body>
+</html>
