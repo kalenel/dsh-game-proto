@@ -1834,80 +1834,46 @@ var Logic = (function(){
 </script>
 <script>
 /* ============================================================================
- * CORE 金属撞击声 v2 —— 短促、明亮、有"敲击感"
+ * CORE 采样音效引擎 —— 真实录音，不再合成
  * ----------------------------------------------------------------------------
- * v1 为什么不像金属（实测反馈"哪有金属声"）：
- *   ① 基频 174-440Hz —— 手机扬声器 400Hz 以下几乎无输出，听到的是"闷响"
- *   ② 衰减 0.5-1.4s —— 太长，听感是"钟声"不是"撞击"
- *   ③ 模态比 1/2.76/5.40 是**板振动**理论值，高阶振幅给得太小
- *   ④ 没有"起音瞬态"—— 金属撞击最关键是前 10ms 的宽频噪声
+ * v1/v2 的教训：我是聋的，用模态公式"推导"金属声是死路。
+ * 真实游戏 90% 用采样。这版全部换成真实录音（CC0，来源 bliporg/blip）。
  *
- * v2 依据真实撞击声的结构（铁砧 / 钢片 / 铃）：
- *   · 起音瞬态（0-15ms）：**宽频噪声**，占比最大 —— 这是"敲"的质感
- *   · 主体（15-250ms）：**非谐波模态**，频率比取 1 / 2.32 / 4.25 / 6.63 / 9.38
- *     （矩形板自由振动的前几个模态，比 1:2.76:5.40 更"金属"）
- *   · 基频抬高到 **600-1800Hz**，手机扬声器才能出得来
- *   · 衰减压到 **0.15-0.45s**，短促有力
+ * 素材映射：
+ *   合并 1-3 级 → metal_clanging（金属碰撞，随等级升 key）
+ *   合并 4-6 级 → metal_clanging + broken_glass 叠加
+ *   合并 7-9 级 → sword_impact（更硬的金属）
+ *   合并 10 级  → big_explosion
+ *   落子        → sword_impact（轻、随机 pitch）
+ *   触底        → waterdrop（短促）
+ *   连锁        → metal_clanging 快速琶音
+ *
+ * 变化处理（让 16 个采样覆盖所有场景）：
+ *   · playbackRate 随等级/力度变化（0.7~1.6x）——音高变化不改变音色
+ *   · 音量包络随力度
+ *   · 多实例重叠（Web Audio decodeAudioData + BufferSource）
  * ========================================================================== */
 (function(){
   'use strict';
 
-  var AC = null, master = null, lowpass = null, limiter = null;
-  var reverb = null, reverbSend = null;
-  var started = false, muted = false;
+  var AC = null, master = null, limiter = null;
+  var bank = {};          // name -> AudioBuffer
+  var loading = 0, started = false, muted = false;
+  var BASE = (function(){
+    // 与 gems/ 同级的相对路径（线上与 file:// 都成立）
+    var p = location.pathname;
+    return p.slice(0, p.lastIndexOf('/') + 1) + 'sounds/';
+  })();
 
-  /* ---- 十种金属：基频高、衰减短、模态非谐波 ----------------------
-     base : 基频 Hz（600 起，手机可闻）
-     ring : 主体衰减秒数（0.15~0.45，短促）
-     hit  : 起音噪声量（0.5~0.9，撞击质感的主来源）
-     hp   : 噪声高通频率（越低越"厚"）
-     modes: [频率比, 振幅, 相对衰减]
-  ---------------------------------------------------------------- */
-  var METALS = {
-    /* 1 铸铁：厚、闷、噪声重 —— 像铁块砸地 */
-    1:  { name:'铸铁', base: 620,  ring:0.17, hit:0.88, hp:900,
-          modes:[[1,1.00,1.00],[2.32,0.62,0.62],[4.25,0.34,0.40],[6.63,0.18,0.26]] },
-    /* 2 青铜：中厚、带鼻音 */
-    2:  { name:'青铜', base: 700,  ring:0.20, hit:0.82, hp:1100,
-          modes:[[1,1.00,1.00],[2.32,0.68,0.66],[4.25,0.40,0.44],[6.63,0.22,0.30]] },
-    /* 3 黄铜：明亮叮 */
-    3:  { name:'黄铜', base: 790,  ring:0.23, hit:0.76, hp:1400,
-          modes:[[1,1.00,1.00],[2.32,0.74,0.70],[4.25,0.46,0.50],[6.63,0.28,0.36],[9.38,0.14,0.22]] },
-    /* 4 紫铜：圆润 */
-    4:  { name:'紫铜', base: 880,  ring:0.25, hit:0.72, hp:1500,
-          modes:[[1,1.00,1.00],[2.32,0.78,0.72],[4.25,0.50,0.54],[6.63,0.30,0.40],[9.38,0.16,0.26]] },
-    /* 5 白银：清亮 */
-    5:  { name:'白银', base: 980,  ring:0.28, hit:0.68, hp:1700,
-          modes:[[1,1.00,1.00],[2.32,0.82,0.76],[4.25,0.56,0.58],[6.63,0.34,0.44],[9.38,0.20,0.30]] },
-    /* 6 黄金：辉煌 */
-    6:  { name:'黄金', base:1080,  ring:0.31, hit:0.64, hp:1800,
-          modes:[[1,1.00,1.00],[2.32,0.86,0.78],[4.25,0.60,0.62],[6.63,0.38,0.48],[9.38,0.22,0.34]] },
-    /* 7 精钢：硬、锐 —— 像敲钢片 */
-    7:  { name:'精钢', base:1200,  ring:0.33, hit:0.74, hp:2100,
-          modes:[[1,1.00,1.00],[2.32,0.90,0.82],[4.25,0.66,0.66],[6.63,0.42,0.52],[9.38,0.26,0.38],[12.6,0.14,0.26]] },
-    /* 8 铂金：极清亮 */
-    8:  { name:'铂金', base:1320,  ring:0.36, hit:0.60, hp:2300,
-          modes:[[1,1.00,1.00],[2.32,0.94,0.84],[4.25,0.70,0.70],[6.63,0.46,0.56],[9.38,0.30,0.42],[12.6,0.16,0.30]] },
-    /* 9 钛金：冷冽、脆 */
-    9:  { name:'钛金', base:1480,  ring:0.38, hit:0.78, hp:2600,
-          modes:[[1,1.00,1.00],[2.32,0.96,0.86],[4.25,0.74,0.72],[6.63,0.50,0.58],[9.38,0.34,0.46],[12.6,0.18,0.32]] },
-    /* 10 秘银：极脆、极亮、余音最长 */
-    10: { name:'秘银', base:1650,  ring:0.45, hit:0.66, hp:2800,
-          modes:[[1,1.00,1.00],[2.32,1.00,0.88],[4.25,0.80,0.76],[6.63,0.56,0.62],[9.38,0.38,0.50],[12.6,0.22,0.36],[16.1,0.12,0.26]] }
+  /* 素材表：事件 → 文件名（可多选随机） */
+  var MAP = {
+    clang:  ['metal_clanging_1','metal_clanging_2','metal_clanging_3','metal_clanging_4',
+             'metal_clanging_5','metal_clanging_6','metal_clanging_7','metal_clanging_8'],
+    sword:  ['sword_impact_1','sword_impact_3','sword_impact_5','sword_impact_7'],
+    glass:  ['broken_glass_2','broken_glass_4'],
+    boom:   ['big_explosion_1'],
+    drop:   ['waterdrop_1']
   };
-
-  function makeIR(ctx, seconds, decay){
-    var rate = ctx.sampleRate, len = Math.floor(rate * seconds);
-    var buf = ctx.createBuffer(2, len, rate);
-    for (var ch = 0; ch < 2; ch++){
-      var d = buf.getChannelData(ch);
-      for (var i = 0; i < len; i++){
-        var t = i / len;
-        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - t, decay) * 0.45;
-      }
-    }
-    return buf;
-  }
 
   function init(){
     if (AC) return true;
@@ -1915,172 +1881,103 @@ var Logic = (function(){
       var Ctx = window.AudioContext || window.webkitAudioContext;
       if (!Ctx) return false;
       AC = new Ctx();
-
       master = AC.createGain();
       master.gain.value = 0.0001;
-
-      /* 高通 80Hz：去掉无用的超低频，省功率给可闻频段 */
-      var hpOut = AC.createBiquadFilter();
-      hpOut.type = 'highpass';
-      hpOut.frequency.value = 80;
-
-      /* 低通 16kHz：保留金属的"嘶" */
-      lowpass = AC.createBiquadFilter();
-      lowpass.type = 'lowpass';
-      lowpass.frequency.value = 16000;
-      lowpass.Q.value = 0.4;
-
       limiter = AC.createDynamicsCompressor();
-      limiter.threshold.value = -10;
-      limiter.knee.value = 3;
-      limiter.ratio.value = 16;
-      limiter.attack.value = 0.001;
-      limiter.release.value = 0.12;
-
-      lowpass.connect(limiter);
-      limiter.connect(hpOut);
-      hpOut.connect(master);
+      limiter.threshold.value = -8;
+      limiter.knee.value = 4;
+      limiter.ratio.value = 12;
+      limiter.attack.value = 0.002;
+      limiter.release.value = 0.15;
+      limiter.connect(master);
       master.connect(AC.destination);
-
-      /* 混响：短，1.1 秒 —— 金属撞击是"干"的，不要大教堂 */
-      reverb = AC.createConvolver();
-      reverb.buffer = makeIR(AC, 1.1, 3.4);
-      reverbSend = AC.createGain();
-      reverbSend.gain.value = 0.22;
-      reverb.connect(reverbSend);
-      reverbSend.connect(lowpass);
-
       return true;
     } catch (e){ AC = null; return false; }
   }
 
-  /* 起音瞬态：宽频噪声 + 极快衰减。这是"敲击感"的核心，v1 给得太少。 */
-  function transient(vol, dur, hpFreq){
-    if (!AC || muted || vol <= 0) return;
-    var t0 = AC.currentTime;
-    var sr = AC.sampleRate;
-    var len = Math.max(8, Math.floor(sr * dur));
-    var buf = AC.createBuffer(1, len, sr);
-    var d = buf.getChannelData(0);
-    /* 指数衰减白噪 + 轻微低通平滑，避免纯白噪的"沙"感 */
-    var prev = 0;
-    for (var i = 0; i < len; i++){
-      var env = Math.pow(1 - i / len, 4.5);
-      var n = (Math.random() * 2 - 1);
-      prev = prev * 0.35 + n * 0.65;
-      d[i] = prev * env;
-    }
+  /* 预解码全部采样 */
+  function loadAll(){
+    if (!AC) return;
+    var all = [];
+    Object.keys(MAP).forEach(function(k){
+      MAP[k].forEach(function(n){
+        if (bank[n]) return;
+        loading++;
+        all.push(fetch(BASE + n + '.ogg')
+          .then(function(r){ return r.arrayBuffer(); })
+          .then(function(ab){ return AC.decodeAudioData(ab); })
+          .then(function(buf){ bank[n] = buf; loading--; })
+          .catch(function(){ loading--; /* 单个失败不致命 */ }));
+      });
+    });
+    return Promise.all(all);
+  }
+
+  /* 播放一个采样。rate 控音高（0.7~1.6），vol 控音量（0~1），可选随机挑一个 */
+  function play(name, rate, vol, when){
+    if (!AC || muted) return;
+    var list = MAP[name];
+    if (!list || !list.length) return;
+    var pick = list[Math.floor(Math.random() * list.length)];
+    var buf = bank[pick];
+    if (!buf) return;                       // 没加载好就静默跳过
+
+    var t0 = (when || 0) + AC.currentTime;
     var src = AC.createBufferSource();
     src.buffer = buf;
-
-    var hp = AC.createBiquadFilter();
-    hp.type = 'highpass';
-    hp.frequency.value = hpFreq || 1200;
-
-    var bp = AC.createBiquadFilter();
-    bp.type = 'peaking';
-    bp.frequency.value = (hpFreq || 1200) * 1.8;
-    bp.Q.value = 1.2;
-    bp.gain.value = 4;
+    src.playbackRate.value = rate || 1;
 
     var g = AC.createGain();
-    g.gain.value = vol;
+    var peak = Math.max(0.001, vol === undefined ? 0.8 : vol);
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(peak, t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0 + Math.min(buf.duration / (rate || 1), 1.6));
 
-    src.connect(hp); hp.connect(bp); bp.connect(g);
-    g.connect(lowpass);
-    g.connect(reverb);
+    src.connect(g);
+    g.connect(limiter);
     src.start(t0);
-    src.onended = function(){ try { src.disconnect(); hp.disconnect(); bp.disconnect(); g.disconnect(); } catch(e){} };
+    src.onended = function(){ try { src.disconnect(); g.disconnect(); } catch(e){} };
   }
 
-  /* 主体：非谐波模态叠加 */
-  function body(level, power, pitchMul){
-    if (!AC || muted) return;
-    var lv = Math.max(1, Math.min(10, level | 0));
-    var m = METALS[lv] || METALS[1];
-    var p = Math.max(0.2, Math.min(1.3, power === undefined ? 0.8 : power));
-    var f0 = m.base * (pitchMul || 1);
-    var t0 = AC.currentTime;
+  /* ===== 事件 ===== */
 
-    for (var i = 0; i < m.modes.length; i++){
-      var ratio = m.modes[i][0];
-      var amp   = m.modes[i][1];
-      var rel   = m.modes[i][2];
-      var freq  = f0 * ratio;
-      if (freq > 18000) continue;
-
-      var osc = AC.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.value = freq;
-      /* 极轻微的音高下滑：真实金属受击后张力释放，频率会降一点 */
-      osc.frequency.setValueAtTime(freq, t0);
-      osc.frequency.exponentialRampToValueAtTime(freq * 0.994, t0 + m.ring * rel);
-
-      var g = AC.createGain();
-      var peak = Math.max(0.0002, amp * 0.34 * (0.5 + p * 0.75));   /* v2.1: 0.16 太小，实测峰值仅 0.09 */
-      var life = m.ring * rel * (0.8 + p * 0.4);
-
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(peak, t0 + 0.0015);   /* 1.5ms 起音 = 撞击 */
-      g.gain.exponentialRampToValueAtTime(peak * 0.30, t0 + life * 0.10);
-      g.gain.exponentialRampToValueAtTime(0.0001, t0 + life);
-
-      osc.connect(g);
-      g.connect(lowpass);
-      g.connect(reverb);
-      osc.start(t0);
-      osc.stop(t0 + life + 0.02);
-      osc.onended = (function(o, gg){ return function(){ try { o.disconnect(); gg.disconnect(); } catch(e){} }; })(osc, g);
-    }
-  }
-
-  /* 完整的一次金属撞击 */
-  function metalHit(level, power, pitchMul){
-    if (!AC || muted) return;
-    var lv = Math.max(1, Math.min(10, level | 0));
-    var m = METALS[lv] || METALS[1];
-    var p = Math.max(0.2, Math.min(1.3, power === undefined ? 0.8 : power));
-
-    /* ① 起音瞬态 —— 最先发声、最短 */
-    transient(m.hit * 0.44 * (0.55 + p * 0.7), 0.030 + p * 0.012, m.hp);
-    /* ② 低频"咚"：真实撞击有胸腔共鸣，纯高频会变成"嘶"。
-       加一个基频 0.5 倍的正弦，短促衰减，只负责"重量感"。 */
-    if (AC && !muted){
-      var t0 = AC.currentTime;
-      var sub = AC.createOscillator();
-      sub.type = 'sine';
-      sub.frequency.setValueAtTime(m.base * 0.5 * (pitchMul || 1), t0);
-      sub.frequency.exponentialRampToValueAtTime(m.base * 0.42 * (pitchMul || 1), t0 + 0.10);
-      var sg = AC.createGain();
-      var sPeak = Math.max(0.0002, 0.16 * (0.5 + p * 0.7));
-      sg.gain.setValueAtTime(0.0001, t0);
-      sg.gain.exponentialRampToValueAtTime(sPeak, t0 + 0.004);
-      sg.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.11);
-      sub.connect(sg); sg.connect(lowpass); sg.connect(reverb);
-      sub.start(t0); sub.stop(t0 + 0.14);
-      sub.onended = (function(o,gg){ return function(){ try{o.disconnect();gg.disconnect();}catch(e){} }; })(sub, sg);
-    }
-    /* ③ 主体模态 */
-    body(lv, p, pitchMul);
-  }
-
-  function playDrop(level){ metalHit(level || 1, 0.55, 0.86); }
-  function playLand(level){ metalHit(level || 1, 0.32, 1.10); }
   function playMerge(level){
     var lv = Math.max(1, Math.min(10, level | 0));
-    metalHit(lv, 0.92, 1.0);
-    if (lv >= 4) setTimeout(function(){ metalHit(lv, 0.45, 1.5); }, 22);
-    if (lv >= 8) setTimeout(function(){ metalHit(lv, 0.30, 2.25); }, 48);
+    /* 等级 → 音高：1 级 0.72x 到 10 级 1.5x（音高上探，音色不变） */
+    var rate = 0.72 + (lv - 1) * (0.78 / 9);
+    var vol  = 0.55 + lv * 0.04;
+
+    if (lv <= 3){
+      play('clang', rate, vol);
+    } else if (lv <= 6){
+      play('clang', rate, vol);
+      play('glass', rate * 1.1, vol * 0.5, 0.02);
+    } else if (lv <= 9){
+      play('sword', rate, vol);
+      play('clang', rate * 0.9, vol * 0.55, 0.03);
+    } else {
+      play('boom', 1.0, 0.95);
+      play('glass', 1.3, 0.6, 0.05);
+    }
   }
+
+  function playDrop(level){
+    /* 落子：轻剑击，随机 pitch 抖动避免重复感 */
+    var jitter = 0.92 + Math.random() * 0.18;
+    play('sword', jitter, 0.42);
+  }
+
+  function playLand(level){
+    /* 触底：水滴（短促有实体感），等级越高 pitch 越低 */
+    var lv = Math.max(1, Math.min(10, level || 1));
+    play('drop', 1.35 - lv * 0.05, 0.5);
+  }
+
   function playChain(n){
-    if (!AC || n < 2) return;
-    var count = Math.min(n, 7);
+    if (n < 2) return;
+    var count = Math.min(n, 6);
     for (var i = 0; i < count; i++){
-      (function(k){
-        setTimeout(function(){
-          metalHit(Math.min(10, 4 + k), 0.6 + k * 0.05, 1 + k * 0.08);
-        }, k * 44);
-      })(i);
+      play('clang', 0.95 + i * 0.11, 0.42 + i * 0.05, 0.05 + i * 0.055);
     }
   }
 
@@ -2091,20 +1988,23 @@ var Logic = (function(){
     if (AC.state === 'suspended') AC.resume();
     var t = AC.currentTime;
     master.gain.setValueAtTime(0.0001, t);
-    master.gain.exponentialRampToValueAtTime(1.0, t + 0.5);
+    master.gain.exponentialRampToValueAtTime(1.0, t + 0.6);
+    loadAll();
   }
 
   window.addEventListener('pointerdown', unlock, { once: true });
   window.addEventListener('touchstart', unlock, { once: true });
-  window.addEventListener('keydown', unlock, { once: true });
 
   window.__audio = {
     ready: function(){ return !!AC && started; },
+    loaded: function(){ return Object.keys(bank).length; },
+    loading: function(){ return loading; },
     state: function(){ return AC ? AC.state : 'none'; },
-    merge: playMerge, drop: playDrop, land: playLand, chain: playChain, hit: metalHit,
-    metalName: function(lv){ return (METALS[lv] || METALS[1]).name; },
-    metals: function(){ return Object.keys(METALS).map(function(k){
-      return { lv:+k, name:METALS[k].name, base:METALS[k].base, ring:METALS[k].ring, hit:METALS[k].hit }; }); },
+    merge: playMerge,
+    drop: playDrop,
+    land: playLand,
+    chain: playChain,
+    play: play,
     level: function(){ return master ? master.gain.value : 0; },
     mute: function(v){ muted = !!v; if (master) master.gain.value = muted ? 0.0001 : 1.0; return muted; },
     isMuted: function(){ return muted; }
